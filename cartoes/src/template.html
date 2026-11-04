@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cartões</title>
+<style>/*__CSS__*/</style>
+</head>
+<body>
+<div id="board"></div>
+<div id="empty">duplo clique para começar</div>
+<div id="hint">duplo clique · novo cartão &nbsp;·&nbsp; N &nbsp;·&nbsp; encoste um cartão na borda de outro para agrupar &nbsp;·&nbsp; Shift + arrastar solta do grupo</div>
+<button id="organize" title="Organizar: testar ordens de leitura, pôr cartões de lado, anotar e salvar ordens (E)">
+  <svg viewBox="0 0 20 16" width="16" height="13" aria-hidden="true"><path d="M1 3.5h3.2c3.6 0 4.6 9 8.6 9H18M1 12.5h3.2c1.6 0 2.6-1.7 3.4-3.4M12.8 3.5H18M15.5 1l2.7 2.5-2.7 2.5M15.5 10l2.7 2.5-2.7 2.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  organizar
+</button>
+<div id="dock"></div>
+<div id="toast"></div>
+<div id="show" hidden>
+  <div class="show-top">
+    <button id="show-close" class="back" title="Voltar à mesa; nada na mesa muda (Esc)">← mesa</button>
+    <span class="org-label">ordem</span>
+    <button id="org-name" title="Trocar de ordem, renomear, duplicar, excluir"></button>
+    <span id="show-count"></span>
+    <span class="show-sp"></span>
+    <button id="show-again" title="Sortear outra ordem para as peças (R)">embaralhar</button>
+    <button id="org-layout" title="Arrumar os cartões na mesa, em fileiras, nesta ordem (pode desfazer)">dispor na mesa</button>
+    <button id="org-notes" title="Notas desta ordem e deste ponto dela (C)">notas</button>
+    <button id="org-save" class="primary"></button>
+  </div>
+  <div id="orders-pop" hidden></div>
+  <div class="show-mid">
+    <button class="nav" id="prev" aria-label="Anterior" title="Anterior (←)">‹</button>
+    <div id="stage"></div>
+    <button class="nav" id="next" aria-label="Próximo" title="Próximo (→)">›</button>
+    <aside id="notes">
+      <label>neste ponto da ordem<textarea id="note-piece" spellcheck="false" placeholder="ex.: funciona melhor depois da cena do jardim"></textarea></label>
+      <label>sobre esta ordem<textarea id="note-order" spellcheck="false" placeholder="ex.: versão com o flashback no começo"></textarea></label>
+    </aside>
+  </div>
+  <div class="show-bottom">
+    <div id="strip" title=""></div>
+    <div id="tray" hidden>
+      <span class="tray-label">fora da ordem</span>
+      <div id="tray-chips"></div>
+    </div>
+  </div>
+  <div class="org-keys">← → ler &nbsp;·&nbsp; arraste as fichas ou Alt + ← → para mover &nbsp;·&nbsp; ↑ pôr de lado &nbsp;·&nbsp; ↓ devolver &nbsp;·&nbsp; Ctrl+Z desfazer</div>
+  <div id="drop-mark"></div>
+</div>
+<script>/*__JS__*/</script>
+</body>
+</html>

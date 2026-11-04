@@ -1,0 +1,46 @@
+{
+  "name": "cartoes",
+  "version": "1.0.0",
+  "description": "Editor para escritores: cartões de livre manipulação, inspirado nas fichas de Nabokov",
+  "author": "Cartões",
+  "license": "ISC",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node build.mjs && electron .",
+    "dist": "node build.mjs && electron-builder --win nsis --x64",
+    "dist:dir": "node build.mjs && electron-builder --win dir --x64",
+    "test": "node build.mjs && node --test --test-concurrency=1 \"tests/*.test.cjs\"",
+    "test:browser": "node build.mjs && node --test \"tests/browser.test.cjs\"",
+    "test:electron": "node build.mjs && node --test \"tests/electron.test.cjs\""
+  },
+  "build": {
+    "appId": "app.cartoes.editor",
+    "productName": "Cartões",
+    "directories": { "output": "dist" },
+    "files": ["index.html", "electron/**/*", "package.json"],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Cartoes-Setup-${version}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^45.2.2",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "playwright": "^1.64.1",
+    "prosemirror-commands": "^1.7.2",
+    "prosemirror-history": "^1.5.1",
+    "prosemirror-inputrules": "^1.5.1",
+    "prosemirror-keymap": "^1.2.3",
+    "prosemirror-model": "^1.25.12",
+    "prosemirror-state": "^1.4.4",
+    "prosemirror-view": "^1.42.9"
+  }
+}
