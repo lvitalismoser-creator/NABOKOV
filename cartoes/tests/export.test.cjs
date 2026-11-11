@@ -28,6 +28,7 @@ const PIECES = [
   { cards: [{ cat: 'nota', doc: D(P(T('# não é título; 2 < 3 & "aspas" *asterisco* _sublinha_ <b>'))) }, { cat: null, doc: D(P()) }], note: '' },
 ]
 const build = (model) => X.buildDoc({ title: 'Versão flashback', orderNote: 'nota geral', model, pieces: PIECES })
+const FORMAT_IDS = ['docx', 'odt', 'txt', 'md']
 const txt = (bytes) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes) // mantém o BOM, se houver
 
 test('modelo: os três modelos montam o documento certo', () => {
@@ -83,6 +84,166 @@ test('HTML da pré-visualização: texto sempre escapado; limite de blocos', () 
   assert.ok(html.includes('2 &lt; 3 &amp; &quot;aspas&quot;') && html.includes('&lt;b&gt;'))
   assert.ok(!html.includes('<b>'))
   assert.equal(X.toHTML(build('fichas'), { limit: 3 }).split('\n').length, 3)
+})
+
+/* ---------- .docx e .odt: pacotes ZIP de XML, gerados à mão ---------- */
+// Leitor de ZIP do teste, escrito à parte do gerador (src/zip.mjs): lê pelo diretório central,
+// confere o cabeçalho local de cada entrada e recalcula o CRC bit a bit.
+function crcBits(buf) {
+  let c = 0xffffffff
+  for (const byte of buf) {
+    c ^= byte
+    for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1))
+  }
+  return (c ^ 0xffffffff) >>> 0
+}
+function unzip(bytes) {
+  const b = Buffer.from(bytes)
+  const eocd = b.length - 22
+  assert.equal(b.readUInt32LE(eocd), 0x06054b50, 'fim do diretório central')
+  const n = b.readUInt16LE(eocd + 10), cdSize = b.readUInt32LE(eocd + 12), cdAt = b.readUInt32LE(eocd + 16)
+  assert.equal(cdAt + cdSize, eocd)
+  const files = []
+  let p = cdAt
+  for (let i = 0; i < n; i++) {
+    assert.equal(b.readUInt32LE(p), 0x02014b50, 'entrada do diretório central')
+    const method = b.readUInt16LE(p + 10), crc = b.readUInt32LE(p + 16), size = b.readUInt32LE(p + 24)
+    const nameLen = b.readUInt16LE(p + 28), extra = b.readUInt16LE(p + 30), comment = b.readUInt16LE(p + 32), at = b.readUInt32LE(p + 42)
+    const name = b.toString('utf8', p + 46, p + 46 + nameLen)
+    assert.equal(method, 0, name + ': sem compressão')
+    assert.equal(b.readUInt32LE(at), 0x04034b50, name + ': cabeçalho local')
+    assert.equal(b.readUInt16LE(at + 8), 0); assert.equal(b.readUInt32LE(at + 14), crc)
+    assert.equal(b.readUInt32LE(at + 18), size); assert.equal(b.readUInt32LE(at + 22), size)
+    const lName = b.readUInt16LE(at + 26), lExtra = b.readUInt16LE(at + 28)
+    assert.equal(b.toString('utf8', at + 30, at + 30 + lName), name)
+    const data = b.subarray(at + 30 + lName + lExtra, at + 30 + lName + lExtra + size)
+    assert.equal(crcBits(data), crc, name + ': CRC')
+    files.push({ name, data, text: data.toString('utf8'), at, extra: lExtra })
+    p += 46 + nameLen + extra + comment
+  }
+  assert.equal(p, eocd)
+  return files
+}
+const part = (files, name) => { const f = files.find((x) => x.name === name); assert.ok(f, 'falta ' + name); return f.text }
+const unx = (t) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+const HARD = '# não é título; 2 < 3 & "aspas" *asterisco* _sublinha_ <b>'
+
+/** Parágrafos do document.xml: [{ style, runs: [{ text, b, i }] }]. */
+function docxParas(xml) {
+  return [...xml.matchAll(/<w:p>(.*?)<\/w:p>/gs)].map(([, p]) => ({
+    style: /<w:pStyle w:val="([^"]+)"/.exec(p)?.[1] || '',
+    runs: [...p.matchAll(/<w:r>(.*?)<\/w:r>/gs)].map(([, r]) => ({
+      text: unx([...r.matchAll(/<w:t xml:space="preserve">(.*?)<\/w:t>|(<w:tab\/>)/gs)].map((m) => (m[2] ? '\t' : m[1])).join('')),
+      b: r.includes('<w:b/>'), i: r.includes('<w:i/>'),
+    })),
+  }))
+}
+/** Parágrafos do content.xml: [{ tag, style, text, spans: [[estilo, texto]] }]. */
+function odtParas(xml) {
+  const body = /<office:text>(.*)<\/office:text>/s.exec(xml)[1]
+  const flat = (t) => unx(t.replace(/<text:s\/>/g, ' ').replace(/<text:tab\/>/g, '\t').replace(/<[^>]+>/g, ''))
+  return [...body.matchAll(/<text:(p|h) text:style-name="([^"]+)"[^>]*>(.*?)<\/text:\1>/gs)].map(([, tag, style, inner]) => ({
+    tag, style, text: flat(inner),
+    spans: [...inner.matchAll(/<text:span text:style-name="([^"]+)">(.*?)<\/text:span>/gs)].map((m) => [m[1], flat(m[2])]),
+  }))
+}
+
+test('.docx: pacote válido, texto na ordem, negrito/itálico e estilos', () => {
+  const files = unzip(X.render(build('fichas'), 'docx'))
+  assert.deepEqual(files.map((f) => f.name), ['[Content_Types].xml', '_rels/.rels', 'word/document.xml', 'word/_rels/document.xml.rels', 'word/styles.xml', 'docProps/core.xml'])
+  // tudo o que está no pacote tem tipo declarado e é alcançável pelas relações
+  const types = part(files, '[Content_Types].xml')
+  for (const n of ['/word/document.xml', '/word/styles.xml', '/docProps/core.xml']) assert.ok(types.includes(`PartName="${n}"`), n)
+  assert.ok(part(files, '_rels/.rels').includes('Target="word/document.xml"'))
+  assert.ok(part(files, 'word/_rels/document.xml.rels').includes('Target="styles.xml"'))
+  assert.ok(part(files, 'docProps/core.xml').includes('<dc:title>Versão flashback</dc:title>'))
+
+  const paras = docxParas(part(files, 'word/document.xml'))
+  assert.deepEqual(paras.map((p) => [p.style, p.runs.map((r) => r.text).join('')]), [
+    ['Title', 'Versão flashback'], ['Subtitle', 'nota geral'],
+    ['Heading2', '1 · Cena'], ['', 'Abertura: a chuva começa antes.'], ['', 'Segundo parágrafo.'], ['Nota', 'Nota: talvez cortar'],
+    ['Heading2', '2'], ['', 'Grupo, parte um.'],
+    ['Heading2', '3 · Lugar'], ['', 'Grupo, parte dois.'],
+    ['Heading2', '4 · Nota'], ['', HARD],
+  ])
+  assert.deepEqual(paras[3].runs.map((r) => [r.text, r.b, r.i]), [
+    ['Abertura: a ', false, false], ['chuva', true, false], [' começa ', false, false], ['antes', false, true], ['.', false, false],
+  ])
+  assert.deepEqual(paras[9].runs.map((r) => [r.b, r.i]), [[true, true]])
+  // todo estilo usado existe no styles.xml
+  const styles = part(files, 'word/styles.xml')
+  for (const id of new Set(paras.map((p) => p.style).filter(Boolean))) assert.ok(styles.includes(`w:styleId="${id}"`), id)
+  // o texto do autor nunca vira marcação XML
+  assert.ok(!part(files, 'word/document.xml').includes('<b>'))
+
+  const sec = docxParas(part(unzip(X.render(build('secoes'), 'docx')), 'word/document.xml'))
+  assert.deepEqual(sec.filter((p) => p.style === 'Separador').map((p) => p.runs[0].text), ['* * *', '* * *'])
+  assert.equal(sec.length, 7)
+})
+
+test('.odt: mimetype primeiro e sem compressão, manifesto completo, texto e formatação', () => {
+  const bytes = X.render(build('fichas'), 'odt')
+  const files = unzip(bytes)
+  assert.deepEqual(files.map((f) => f.name), ['mimetype', 'content.xml', 'styles.xml', 'meta.xml', 'META-INF/manifest.xml'])
+  // é assim que os programas reconhecem um .odt: "mimetype" logo no byte 30, o tipo no byte 38
+  assert.equal(files[0].at, 0); assert.equal(files[0].extra, 0)
+  assert.equal(Buffer.from(bytes).toString('latin1', 30, 38 + 39), 'mimetypeapplication/vnd.oasis.opendocument.text')
+  const manifest = part(files, 'META-INF/manifest.xml')
+  for (const n of ['content.xml', 'styles.xml', 'meta.xml']) assert.ok(manifest.includes(`manifest:full-path="${n}"`), n)
+  assert.ok(part(files, 'meta.xml').includes('<dc:title>Versão flashback</dc:title>'))
+
+  const content = part(files, 'content.xml')
+  const paras = odtParas(content)
+  assert.deepEqual(paras.map((p) => [p.tag, p.style, p.text]), [
+    ['p', 'Title', 'Versão flashback'], ['p', 'Subtitle', 'nota geral'],
+    ['h', 'Heading_20_2', '1 · Cena'], ['p', 'Standard', 'Abertura: a chuva começa antes.'], ['p', 'Standard', 'Segundo parágrafo.'], ['p', 'Nota', 'Nota: talvez cortar'],
+    ['h', 'Heading_20_2', '2'], ['p', 'Standard', 'Grupo, parte um.'],
+    ['h', 'Heading_20_2', '3 · Lugar'], ['p', 'Standard', 'Grupo, parte dois.'],
+    ['h', 'Heading_20_2', '4 · Nota'], ['p', 'Standard', HARD],
+  ])
+  assert.deepEqual(paras[3].spans, [['T1', 'chuva'], ['T2', 'antes']])
+  assert.deepEqual(paras[9].spans, [['T3', 'Grupo, parte dois.']])
+  assert.match(content, /<style:style style:name="T1" style:family="text"><style:text-properties fo:font-weight="bold"/)
+  assert.match(content, /<style:style style:name="T2" style:family="text"><style:text-properties fo:font-style="italic"/)
+  const styles = part(files, 'styles.xml')
+  for (const name of new Set(paras.map((p) => p.style))) assert.ok(styles.includes(`style:name="${name}"`), name)
+
+  // espaços seguidos e tabulação sobrevivem (no ODF, espaço repetido precisa virar <text:s/>)
+  const sp = X.buildDoc({ model: 'corrido', pieces: [{ cards: [{ doc: D(P(T('a  b'), T(' '), T(' c\td', 'em'))) }] }] })
+  const x = part(unzip(X.render(sp, 'odt')), 'content.xml')
+  assert.ok(x.includes('a <text:s/>b <text:span text:style-name="T2"><text:s/>c<text:tab/>d</text:span>'), x)
+  assert.equal(docxParas(part(unzip(X.render(sp, 'docx')), 'word/document.xml'))[0].runs.map((r) => r.text).join(''), 'a  b  c\td')
+})
+
+test('.docx/.odt: caracteres que quebrariam o XML não passam; documento vazio ainda abre', () => {
+  const bad = X.buildDoc({ title: 'a\u0001b', model: 'fichas', pieces: [{ cards: [{ doc: D(P(T('x\u0000y\u000bz\ufffe]]>&amp;'))) }] }] })
+  for (const f of ['docx', 'odt']) {
+    for (const file of unzip(X.render(bad, f))) assert.ok(!/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe]/.test(file.text), `${f}: ${file.name}`)
+  }
+  assert.equal(docxParas(part(unzip(X.render(bad, 'docx')), 'word/document.xml'))[2].runs[0].text, 'x y z ]]>&amp;')
+  const empty = X.buildDoc({ model: 'corrido', pieces: [] })
+  assert.ok(part(unzip(X.render(empty, 'docx')), 'word/document.xml').includes('<w:p/>'))
+  assert.ok(part(unzip(X.render(empty, 'odt')), 'content.xml').includes('<text:p text:style-name="Standard"/>'))
+})
+
+/* Se houver LibreOffice na máquina, abre os arquivos de verdade e compara o texto que ele leu.
+ * Sem LibreOffice o teste é pulado (o Word não tem como ser automatizado aqui). */
+const { spawnSync } = require('node:child_process')
+const hasOffice = spawnSync('soffice', ['--version'], { timeout: 20000 }).status === 0
+test('.docx/.odt: o LibreOffice abre e lê o mesmo texto', { skip: !hasOffice && 'LibreOffice (soffice) não está instalado' }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cartoes-lo-'))
+  const want = ['Versão flashback', 'nota geral', '1 · Cena', 'Abertura: a chuva começa antes.', 'Segundo parágrafo.', 'Nota: talvez cortar',
+    '2', 'Grupo, parte um.', '3 · Lugar', 'Grupo, parte dois.', '4 · Nota', HARD]
+  try {
+    for (const f of ['docx', 'odt']) {
+      const src = path.join(dir, `de-${f}.${f}`)
+      fs.writeFileSync(src, X.render(build('fichas'), f))
+      const r = spawnSync('soffice', ['--headless', `-env:UserInstallation=file://${dir.split('\\').join('/')}/perfil`, '--convert-to', 'txt:Text (encoded):UTF8', '--outdir', dir, src], { timeout: 120000 })
+      assert.equal(r.status, 0, String(r.stderr))
+      const got = fs.readFileSync(path.join(dir, `de-${f}.txt`), 'utf8').replace(/^\ufeff/, '').split(/\r?\n/).filter(Boolean)
+      assert.deepEqual(got, want, f)
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
 })
 
 /* ---------- a janela, no navegador ---------- */
@@ -158,6 +319,30 @@ test('janela Exportar: ordem salva vem escolhida; o que está de lado fica de fo
   assert.equal(await page.textContent('.x-info'), '3 cartões')
   await page.keyboard.press('Escape')
   assert.equal(await page.locator('#sheet').isVisible(), false)
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
+
+test('janela Exportar: .docx e .odt baixados são pacotes íntegros, com XML bem formado e o texto da ordem', async () => {
+  const { ctx, page, errors } = await open({ 'cartoes.org': JSON.stringify(ORG) })
+  await page.keyboard.press('Control+e')
+  assert.deepEqual(await page.$$eval('#sheet [data-key="format"] input', (els) => els.map((e) => e.value)), FORMAT_IDS)
+  for (const [label, ext] of [['Word (.docx)', 'docx'], ['LibreOffice (.odt)', 'odt']]) {
+    if (!(await page.locator('#sheet').isVisible())) await page.keyboard.press('Control+e')
+    await choose(page, label); await choose(page, 'uma seção por cartão')
+    const f = await exportar(page)
+    assert.match(f.name, new RegExp(`^Invertida-\\d{4}-\\d{2}-\\d{2}\\.${ext}$`))
+    const files = unzip(f.bytes)
+    // cada parte XML passa por um analisador de XML de verdade (o do navegador)
+    for (const x of files.filter((y) => y.name !== 'mimetype')) {
+      const err = await page.evaluate((t) => new DOMParser().parseFromString(t, 'application/xml').querySelector('parsererror')?.textContent || null, x.text)
+      assert.equal(err, null, `${ext}: ${x.name}`)
+    }
+    const paras = ext === 'docx'
+      ? docxParas(part(files, 'word/document.xml')).map((p) => p.runs.map((r) => (r.b ? `[${r.text}]` : r.text)).join(''))
+      : odtParas(part(files, 'content.xml')).map((p) => p.spans.reduce((t, [, s]) => t.replace(s, `[${s}]`), p.text))
+    assert.deepEqual(paras, ['gama', '* * *', 'alfa [forte]']) // "beta" está de lado: fica de fora
+  }
   assert.deepEqual(errors, [])
   await ctx.close()
 })

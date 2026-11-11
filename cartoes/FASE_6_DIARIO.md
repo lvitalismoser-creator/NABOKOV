@@ -145,3 +145,53 @@ Padrões assumidos nesta fase, **pendentes de confirmação do dono**:
 - "Mostrar na pasta" (abre o Explorer): não testado.
 - Abrir o `.txt` no Bloco de Notas do Windows.
 - Gravar por cima de um arquivo aberto no Word (o código devolve o aviso "está aberto em outro programa?", mas não reproduzi o erro real).
+
+## Bloco 4 — DOCX e ODT, gerados à mão
+
+**O que foi feito**
+
+- **`src/zip.mjs`** (novo, ~60 linhas): ZIP sem compressão ("stored") com CRC-32 próprio. Sem dependência.
+- **`toDocx()` e `toOdt()`** em `src/export.mjs`, a partir do mesmo documento intermediário dos outros formatos.
+  - **`.docx`** (6 partes): `[Content_Types].xml`, `_rels/.rels`, `word/document.xml`, `word/_rels/document.xml.rels`, `word/styles.xml`, `docProps/core.xml` (título e data).
+  - **`.odt`** (5 partes): `mimetype` (primeiro, sem compressão, sem campo extra), `content.xml`, `styles.xml`, `meta.xml`, `META-INF/manifest.xml`.
+- Página A4 com margens de 2,5 cm, fonte Georgia 12, idioma pt-BR.
+- Estilos de parágrafo com nome, para o autor poder mudar tudo de uma vez no editor: Normal/Standard, Title, Subtitle (nota geral da ordem), Heading 2 (cabeçalho de ficha; aparece no painel de navegação), Separador (`* * *` centralizado) e Nota.
+- Negrito e itálico preservados nos dois (no ODT, estilos de texto T1/T2/T3).
+- A janela "Exportar" agora oferece Word (.docx), LibreOffice (.odt), Texto e Markdown; o `.docx` é o primeiro da lista.
+
+**Decisões e motivos**
+
+- **Sem compressão.** É o que o plano previa; o arquivo fica maior (texto puro em XML), mas um romance inteiro não passa de poucos MB e o código fica pequeno e conferível.
+- **Georgia só para o alfabeto latino** no `.docx`. Na primeira versão eu fixava a fonte também para outros sistemas de escrita, e o LibreOffice deixou de mostrar caracteres japoneses de um teste; tirei.
+- **Espaços no ODT:** o formato engole espaços repetidos e o espaço inicial do parágrafo. Cada um vira `<text:s/>`, e tabulação vira `<text:tab/>`, para o texto chegar igual ao digitado.
+- **Caracteres de controle** (que tornam um XML inválido e fariam o Word recusar o arquivo) viram espaço.
+- **Nota geral da ordem com várias linhas** vira um parágrafo por linha.
+- Datas dos metadados são a hora da exportação.
+
+**Testes**: **47 de 47** (nenhum pulado neste contêiner).
+
+- `tests/export.test.cjs` (+5):
+  - `.docx`: pacote íntegro, partes declaradas e ligadas, parágrafos na ordem com estilo certo, negrito/itálico por trecho, todo estilo usado existe.
+  - `.odt`: `mimetype` no lugar exato, manifesto completo, parágrafos, estilos, espaços repetidos e tabulação.
+  - Caracteres inválidos não passam; documento vazio ainda é um arquivo válido.
+  - **LibreOffice de verdade:** se `soffice` existir na máquina, o teste abre o `.docx` e o `.odt` nele, converte para texto e compara com o esperado. Sem LibreOffice, o teste é **pulado** (aparece como "skipped").
+  - Janela no navegador: baixa `.docx` e `.odt`, confere o pacote e passa cada XML pelo analisador de XML do navegador.
+- O leitor de ZIP dos testes foi escrito à parte do gerador (lê pelo diretório central, confere cabeçalhos e recalcula o CRC por outro algoritmo), para um erro no gerador não se esconder num leitor "irmão".
+
+**Verificação manual nesta sessão** (fora do `npm test`)
+
+| Com quê | Resultado |
+|---|---|
+| `unzip -t` e `zipfile` do Python | os 6 arquivos (3 modelos × 2 formatos) sem erro |
+| `xml.dom.minidom` | todas as partes XML bem formadas |
+| LibreOffice 24 (headless) → texto | `.docx` e `.odt` abertos; texto idêntico, espaços e tab preservados |
+| LibreOffice → PDF → imagem | vi a página: título, nota geral, cabeçalhos de ficha, negrito/itálico, `* * *` centralizado, nota recuada |
+| pandoc | negrito, itálico e cabeçalhos reconhecidos nos dois formatos |
+| python-docx | estilos por nome (Title, Subtitle, Heading 2, Normal), trechos em negrito/itálico, título nos metadados, página de 21 cm |
+
+**Não verificado**
+
+- **Microsoft Word** (nenhuma versão) e **Word Online / Google Docs**: não há como abrir daqui. O `.docx` segue a estrutura mínima usual e passou por três leitores independentes, mas o Word é mais exigente que todos eles. **É a principal verificação manual que falta.**
+- LibreOffice **no Windows** (aqui foi no Linux).
+- A fonte Georgia não existe neste contêiner: vi o layout com uma fonte substituta.
+- Documento muito grande (centenas de cartões): não medi tempo nem tamanho.
