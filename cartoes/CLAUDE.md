@@ -6,7 +6,7 @@ Programa desktop para escritores: editor de texto com organização integrada, i
 
 ## Estado atual
 
-App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), lixeira, exportar/importar e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 27 testes automatizados (`npm test`). Plano em andamento: `PLANO_FASES_5_A_8.md`. Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador. Histórico da revisão e do plano de salvamento: `REVISAO_E_PLANO_SALVAMENTO.md`.
+App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), menu ≡ com lixeira, instantâneos e atalhos, pontinho de salvo, exportação em docx/odt/pdf/txt/md (Fase 6), backup/importação `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 49 testes automatizados (`npm test`). Diário da Fase 6: `FASE_6_DIARIO.md`. Plano em andamento: `PLANO_FASES_5_A_8.md`. Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador. Histórico da revisão e do plano de salvamento: `REVISAO_E_PLANO_SALVAMENTO.md`.
 
 - `src/main.js`: lógica (ProseMirror, quadro, arrasto, persistência, organizador, menu, janela de exportar, demo)
 - `src/export.mjs`: exportação pura (modelos e formatos), sem DOM; `src/zip.mjs`: ZIP mínimo para `.docx`/`.odt`
@@ -62,13 +62,14 @@ Abrir `index.html#demo` carrega cartões de exemplo (inclui um com estouro de te
 - **Exportação (Fase 6)**: `src/export.mjs` é puro (sem DOM), testado direto no Node. Caminho único: peças → `buildDoc({ title, model, pieces, orderNote })` → `{ title, blocks }` (blocos `title`/`lead`/`h`/`p`/`sep`/`note`; `p` tem `runs: [{ text, b, i }]`) → `render(doc, formato)` devolve os bytes. Formato novo = entrada em `FORMATS` + um ramo em `render`.
   - Janela "Exportar" (`openExport()` em `main.js`, menu ≡ ou `Ctrl+E`): ordem (salvas, em teste, "a mesa como está"), modelo (`corrido` / `secoes` / `fichas`), formato, pré-visualização. Postos de lado não saem; exportar nunca altera mesa nem ordens.
   - Formatos: `.docx` e `.odt` (gerados à mão: `src/zip.mjs` faz o ZIP sem compressão; `toDocx()`/`toOdt()` escrevem o XML, com estilos de parágrafo nomeados), `.txt` (sem negrito/itálico; BOM + CRLF), `.md`. No ODT, espaço repetido vira `<text:s/>`; caracteres de controle viram espaço (XML inválido faria o Word recusar o arquivo).
+  - PDF: não é montado à mão. O documento vai para `#print-root` (invisível na tela); o CSS `@media print` esconde todo o resto e o `@page` define A4 com 2,5 cm. No desktop, `exportFile({ name, print: true })` → `webContents.printToPDF`; no navegador, `window.print()` com o aviso "Salvar como PDF". Qualquer elemento novo direto no `<body>` já fica fora da impressão (`body > * { display: none }`).
   - Salvar: no desktop, `cartoesDisk.exportFile({ name, data, label })` → IPC `export:save` → "Salvar como" do sistema (só extensões de `EXPORT_EXT`; grava só no caminho escolhido no diálogo). No navegador, download.
 - Atalhos: `?` lista os atalhos; `Ctrl+E` exporta; `E` abre o organizador; duplo clique no fundo ou `N` cria cartão; `Ctrl/⌘+Enter` cria o próximo ao lado; `Esc` tira o foco; `Backspace` em cartão vazio o apaga. (`Ctrl+N` é reservado pelo navegador; resolver no app desktop.)
 - Interface em português (pt-BR).
 
 ## Próximos passos
 
-**O plano vigente é `PLANO_FASES_5_A_8.md`** (decidido com o dono em 2026-11-03): Fase 5 organizador (feita), 6 menu + indicador de salvo + exportação docx/odt/pdf, 7 mesa (pan/zoom/modo mapa, tamanhos P/M/G, seleção múltipla), 8 revisão de interface. A lista abaixo é a antiga; o que nela não estiver no plano continua valendo como pendência.
+**O plano vigente é `PLANO_FASES_5_A_8.md`** (decidido com o dono em 2026-11-03): Fase 5 organizador (feita), 6 menu + indicador de salvo + exportação docx/odt/pdf (feita em 2026-11-11; falta o dono abrir os arquivos no Word e confirmar os padrões assumidos), 7 mesa (pan/zoom/modo mapa, tamanhos P/M/G, seleção múltipla), 8 revisão de interface. A lista abaixo é a antiga; o que nela não estiver no plano continua valendo como pendência.
 
 Feitos: restaurar instantâneo sem console (menu ≡, Fase 6), app desktop em Electron, arquivo `.json` em disco, `Ctrl+N` livre, salvamento robusto, testes, instalador, organizador (resolve também o I6).
 
@@ -81,7 +82,7 @@ Feitos: restaurar instantâneo sem console (menu ≡, Fase 6), app desktop em El
 2. **Pan/zoom do quadro** (hoje é uma viewport fixa) e posições relativas ao quadro, não à janela. Resolve o I1 de vez; mexe em arrasto e ímã, então com testes novos.
 3. **Organização:** agrupar/ordenar cartões, cor ou marcador discreto, busca.
 4. **Do cartão ao texto:** montar um editor de texto corrido a partir de uma sequência de cartões.
-5. **Exportar/importar** projeto.
+5. **Exportar/importar** projeto. (Backup `.json` desde antes; documento docx/odt/pdf/txt/md na Fase 6.)
 
 ## Empacotar (Windows)
 
@@ -98,16 +99,18 @@ npm run dist:dir   # só o app descompactado: dist/win-unpacked/Cartões.exe
 ## Testes
 
 ```bash
-npm test              # rebuilda e roda tudo (node:test + Playwright, 27 testes, ~1 min)
+npm test              # rebuilda e roda tudo (node:test + Playwright, 49 testes, ~2 min)
 npm run test:browser  # persistência no navegador (contextos limpos)
 npm run test:electron # app desktop; isolado por CARTOES_DATA_DIR (arquivo e perfil do Chromium)
 ```
 
 - `tests/browser.test.cjs`: salvar, demo isolado, JSON ilegível, quarentena, aviso de falha, IndexedDB x espelho, aba única, teto de espera, lixeira, exportar/importar, instantâneos.
-- `tests/electron.test.cjs`: ponte sem Node e sem navegar para fora, pontinho "em disco", restaurar instantâneo no arquivo, exportar pelo "Salvar como" (diálogo respondido pelo teste via `app.evaluate`), gravação ao fechar, disco como fonte, `.bak`/instantâneos/recuperação, instância única, ordens no `projeto.json`.
+- `tests/electron.test.cjs`: ponte sem Node e sem navegar para fora, pontinho "em disco", restaurar instantâneo no arquivo, exportar pelo "Salvar como" (diálogo respondido pelo teste via `app.evaluate`), PDF e `.docx` reais gravados pelo app, gravação ao fechar, disco como fonte, `.bak`/instantâneos/recuperação, instância única, ordens no `projeto.json`.
 - `tests/menu.test.cjs` (Fase 6): pontinho de salvo (estados, hover, falha, somente leitura, demo), menu ≡ (itens, teclado, backup, importar), lixeira, instantâneos, atalhos.
 - `tests/export.test.cjs` (Fase 6): `export.mjs` no Node (modelos e cada formato) e a janela "Exportar" no navegador (arquivo baixado conferido). O leitor de ZIP do teste é independente do gerador. Se houver `soffice` (LibreOffice) no PATH, um teste abre o `.docx` e o `.odt` nele; sem isso, é pulado.
 - `tests/organizer.test.cjs`: ordem de leitura da mesa, mover (teclado e arrasto), pôr de lado, notas, salvar com nome, bandeja, separar grupo, embaralhar (I6), dispor na mesa + desfazer, Ctrl+Z, lixeira devolve ao lugar, exportar/importar ordens, demo isolado.
+- `tests/helpers.cjs` tem `pdfText(buffer)`: páginas, fontes e texto de um PDF do Chromium, sem ferramenta externa (compare o texto sem espaços).
+- Em Linux sem tela e como root (contêiner/CI): `ELECTRON_DISABLE_SANDBOX=1 xvfb-run -a npm test`. No Windows basta `npm test`.
 - Depois de `goto`, espere `.ProseMirror-focused` antes de digitar: a inicialização é assíncrona e teclas antes disso caem nos atalhos globais.
 - Nunca rode testes sem `CARTOES_DATA_DIR` no Electron: sem isso eles gravam no perfil real do usuário.
 

@@ -705,3 +705,15 @@ body.is-empty #organize { opacity: .4; }
 .xdoc .x-h { margin: 1.5em 0 .45em; font-size: .8em; font-weight: normal; letter-spacing: .1em; text-transform: uppercase; color: #777; }
 .xdoc .x-sep { margin: 1.3em 0; text-align: center; letter-spacing: .3em; color: #777; }
 .xdoc .x-note { margin: .2em 0 1em 1.4em; font-size: .9em; font-style: italic; color: #555; }
+
+/* ---------- impressão: só o documento exportado (é daqui que sai o PDF) ---------- */
+#print-root { display: none; }
+@page { size: A4; margin: 2.5cm; }
+@media print {
+  html, body { height: auto; overflow: visible; background: none; }
+  body > * { display: none !important; }
+  body > #print-root { display: block !important; font-size: 12pt; user-select: text; }
+  .xdoc p { orphans: 2; widows: 2; }
+  .xdoc .x-h { break-after: avoid; }
+  .xdoc .x-note { break-before: avoid; }
+}

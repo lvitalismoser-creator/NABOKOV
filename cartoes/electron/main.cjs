@@ -109,7 +109,10 @@ async function exportFile(req) {
   const name = path.basename(String(req?.name || '')).replace(/[\\/:*?"<>|]/g, ' ').trim()
   const ext = path.extname(name).slice(1).toLowerCase()
   const data = req?.data
-  if (!name || !EXPORT_EXT.includes(ext) || !ArrayBuffer.isView(data) || data.byteLength > 256 * 1024 * 1024) return { ok: false }
+  // PDF: não vêm bytes; o arquivo é a impressão da própria janela (a página deixa só o documento visível)
+  const print = req?.print === true
+  if (!name || !EXPORT_EXT.includes(ext)) return { ok: false }
+  if (print ? ext !== 'pdf' : !ArrayBuffer.isView(data) || data.byteLength > 256 * 1024 * 1024) return { ok: false }
   const r = await dialog.showSaveDialog(win, {
     title: 'Exportar',
     defaultPath: path.join(lastExportDir || app.getPath('documents'), name),
@@ -117,7 +120,10 @@ async function exportFile(req) {
   })
   if (r.canceled || !r.filePath) return { canceled: true }
   try {
-    fs.writeFileSync(r.filePath, Buffer.from(data.buffer, data.byteOffset, data.byteLength))
+    const bytes = print
+      ? await win.webContents.printToPDF({ preferCSSPageSize: true, printBackground: false }) // A4 e margens vêm do @page do CSS
+      : Buffer.from(data.buffer, data.byteOffset, data.byteLength)
+    fs.writeFileSync(r.filePath, bytes)
   } catch (e) {
     // o caso comum no Windows: o arquivo está aberto no Word (EBUSY/EPERM)
     return { ok: false, error: e.code || 'erro' }

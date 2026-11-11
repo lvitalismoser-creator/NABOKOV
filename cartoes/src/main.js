@@ -1759,10 +1759,26 @@ function exportInput(src) {
 /* Grava o arquivo: no app desktop, pelo diálogo "Salvar como" do sistema; no navegador, como download. */
 async function saveFile(name, bytes, f) {
   if (disk?.exportFile) {
-    try { return await disk.exportFile({ name, data: bytes, label: f.label }) } catch { return { ok: false } }
+    // PDF: quem gera é o processo principal, imprimindo esta página (só o #print-root aparece na impressão)
+    const req = f.print ? { name, print: true, label: f.label } : { name, data: bytes, label: f.label }
+    const title = document.title
+    if (f.print) document.title = name.replace(/\.pdf$/, '') // vira o título nos metadados do PDF
+    try { return await disk.exportFile(req) } catch { return { ok: false } } finally { document.title = title }
   }
   download(name, new Blob([bytes], { type: f.mime }))
   return { ok: true }
+}
+
+/* PDF no navegador: não há como gravar o arquivo direto; abre a impressão do navegador,
+ * onde o usuário escolhe "Salvar como PDF". O título da página vira o nome sugerido. */
+const printRoot = document.getElementById('print-root')
+function printInBrowser(name) {
+  const title = document.title
+  document.title = name.replace(/\.pdf$/, '')
+  const done = () => { document.title = title; printRoot.replaceChildren() }
+  addEventListener('afterprint', done, { once: true })
+  say('Na janela de impressão, escolha “Salvar como PDF”')
+  setTimeout(() => window.print(), 50)
 }
 
 function openExport() {
@@ -1825,15 +1841,20 @@ function openExport() {
     const { doc: d } = current()
     const f = FORMATS.find((x) => x.id === st.format)
     const name = fileName(d.title, f.ext)
-    let bytes
-    try { bytes = renderFile(d, f.id) } catch (err) {
+    let bytes = null
+    try {
+      if (f.print) printRoot.innerHTML = toHTML(d) // texto sempre escapado em toHTML
+      else bytes = renderFile(d, f.id)
+    } catch (err) {
       console.error('cartoes: exportação falhou', err)
       say('Não consegui montar o arquivo. Nada foi gravado.')
       return
     }
+    if (f.print && !disk?.exportFile) { closeSheet(); printInBrowser(name); return }
     goBtn.disabled = true
     const r = await saveFile(name, bytes, f)
     goBtn.disabled = false
+    printRoot.replaceChildren()
     if (r?.canceled) return // desistiu no diálogo: a janela continua como estava
     if (!r?.ok) { say('Não consegui gravar o arquivo. Ele está aberto em outro programa?'); return }
     closeSheet()

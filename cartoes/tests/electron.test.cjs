@@ -8,7 +8,7 @@ const os = require('node:os')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { _electron } = require('playwright')
-const { ROOT, sleep, eventually, texts } = require('./helpers.cjs')
+const { ROOT, sleep, eventually, texts, pdfText } = require('./helpers.cjs')
 
 let data, FILE, opened
 beforeEach(() => {
@@ -168,6 +168,52 @@ test('exportar grava o arquivo escolhido no "Salvar como"; cancelar não grava n
   // a ponte recusa o que não é exportação: extensão estranha ou dados que não são bytes
   assert.deepEqual(await win.evaluate(() => window.cartoesDisk.exportFile({ name: 'x.exe', data: new Uint8Array(1) })), { ok: false })
   assert.deepEqual(await win.evaluate(() => window.cartoesDisk.exportFile({ name: 'x.txt', data: 'texto' })), { ok: false })
+})
+
+test('exportar em PDF e em .docx: arquivos reais no disco, com o texto dos cartões', async () => {
+  const para = (text, mark) => ({ type: 'paragraph', content: [{ type: 'text', text, ...(mark ? { marks: [{ type: mark }] } : {}) }] })
+  const cards = []
+  for (let i = 0; i < 30; i++) {
+    cards.push({ id: 'c' + i, x: 40 + (i % 3) * 360, y: 60 + Math.floor(i / 3) * 230, cat: i % 2 ? 'cena' : null,
+      doc: { type: 'doc', content: [para(`Cartão ${i}: ação e coração.`), para('em negrito', 'strong'), para('em itálico', 'em'), para('Frase para encher a página. '.repeat(12))] } })
+  }
+  fs.writeFileSync(FILE, JSON.stringify({ savedAt: 5, cards }))
+  const { app, win } = await launch()
+  await win.keyboard.press('Escape'); await win.mouse.click(5, 5)
+
+  const pdf = path.join(data, 'livro.pdf')
+  await answerSaveDialog(app, pdf)
+  await win.keyboard.press('Control+e')
+  await win.locator('#sheet .x-opt', { hasText: 'PDF' }).click()
+  await win.locator('#sheet .x-opt', { hasText: 'fichas completas' }).click()
+  await win.click('#x-go')
+  assert.ok(await eventually(() => fs.existsSync(pdf) && fs.statSync(pdf).size > 5000, { timeout: 15000 }))
+  await win.waitForSelector('#toast.show')
+  const bytes = fs.readFileSync(pdf)
+  assert.equal(bytes.toString('latin1', 0, 5), '%PDF-')
+  assert.match(bytes.toString('latin1', bytes.length - 8), /%%EOF\s*$/)
+  const r = pdfText(bytes)
+  assert.ok(r.pages >= 5, 'várias páginas: ' + r.pages)           // 30 fichas não cabem em poucas páginas
+  assert.equal(r.fonts, 3)                                         // normal, negrito e itálico embutidos
+  const flat = r.text.replace(/\s/g, '')
+  assert.ok(!flat.includes('�'))
+  for (const i of [0, 14, 29]) assert.ok(flat.includes(`Cartão${i}:açãoecoração.`), 'falta o cartão ' + i)
+  assert.ok(flat.indexOf('Cartão0:') < flat.indexOf('Cartão1:') && flat.indexOf('Cartão1:') < flat.indexOf('Cartão29:')) // ordem de leitura da mesa
+  assert.ok(flat.includes('2·CENA'))
+  assert.ok(!flat.includes('organizar') && !flat.includes('duploclique')) // nada da interface vai para o papel
+  assert.equal((await app.evaluate(() => global.__asked)).filters[0].extensions[0], 'pdf')
+  assert.equal(await win.title(), 'Cartões')                       // o título da janela volta ao normal
+  assert.equal(await win.innerHTML('#print-root'), '')
+
+  const docx = path.join(data, 'livro.docx')
+  await answerSaveDialog(app, docx)
+  await win.keyboard.press('Control+e')
+  await win.locator('#sheet .x-opt', { hasText: 'Word (.docx)' }).click()
+  await win.click('#x-go')
+  assert.ok(await eventually(() => fs.existsSync(docx)))
+  const z = fs.readFileSync(docx)
+  assert.equal(z.readUInt32LE(0), 0x04034b50)                      // os bytes atravessaram a ponte intactos
+  assert.ok(z.includes(Buffer.from('Cartão 29: ação e coração.', 'utf8')))
 })
 
 test('a segunda instância não abre', async () => {

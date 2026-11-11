@@ -25,6 +25,8 @@ export const MODELS = [
 export const FORMATS = [
   { id: 'docx', ext: 'docx', label: 'Word (.docx)', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
   { id: 'odt', ext: 'odt', label: 'LibreOffice (.odt)', mime: 'application/vnd.oasis.opendocument.text' },
+  // o PDF não é montado aqui: sai da impressão do próprio navegador/Electron sobre o HTML de toHTML()
+  { id: 'pdf', ext: 'pdf', label: 'PDF', mime: 'application/pdf', print: true },
   { id: 'txt', ext: 'txt', label: 'Texto (.txt)', mime: 'text/plain', hint: 'sem negrito nem itálico' },
   { id: 'md', ext: 'md', label: 'Markdown (.md)', mime: 'text/markdown' },
 ]

@@ -8,7 +8,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { chromium } = require('playwright')
-const { ROOT, URL_APP, sleep, doc, seed } = require('./helpers.cjs')
+const { ROOT, URL_APP, sleep, eventually, doc, seed, pdfText } = require('./helpers.cjs')
 
 let X, browser
 before(async () => {
@@ -28,7 +28,7 @@ const PIECES = [
   { cards: [{ cat: 'nota', doc: D(P(T('# não é título; 2 < 3 & "aspas" *asterisco* _sublinha_ <b>'))) }, { cat: null, doc: D(P()) }], note: '' },
 ]
 const build = (model) => X.buildDoc({ title: 'Versão flashback', orderNote: 'nota geral', model, pieces: PIECES })
-const FORMAT_IDS = ['docx', 'odt', 'txt', 'md']
+const FORMAT_IDS = ['docx', 'odt', 'pdf', 'txt', 'md']
 const txt = (bytes) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes) // mantém o BOM, se houver
 
 test('modelo: os três modelos montam o documento certo', () => {
@@ -343,6 +343,34 @@ test('janela Exportar: .docx e .odt baixados são pacotes íntegros, com XML bem
       : odtParas(part(files, 'content.xml')).map((p) => p.spans.reduce((t, [, s]) => t.replace(s, `[${s}]`), p.text))
     assert.deepEqual(paras, ['gama', '* * *', 'alfa [forte]']) // "beta" está de lado: fica de fora
   }
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
+
+test('PDF no navegador: a impressão mostra só o documento; o PDF impresso traz o texto e as três fontes', async () => {
+  const { ctx, page, errors } = await open({ 'cartoes.org': JSON.stringify(ORG) })
+  await page.evaluate(() => { window.__prints = 0; window.print = () => { window.__prints++ } })
+  await page.keyboard.press('Control+e')
+  await choose(page, 'PDF'); await choose(page, 'fichas completas')
+  await page.click('#x-go')
+  assert.ok(await eventually(() => page.evaluate(() => window.__prints === 1)))
+  assert.equal(await page.locator('#sheet').isVisible(), false)
+  assert.match(await page.textContent('#toast'), /Salvar como PDF/)
+  assert.match(await page.title(), /^Invertida-\d{4}-\d{2}-\d{2}$/)   // nome sugerido pelo navegador
+  assert.match(await page.innerHTML('#print-root'), /alfa <strong>forte<\/strong>/)
+  // na tela o documento de impressão não aparece; na impressão, só ele
+  assert.equal(await page.locator('#print-root').isVisible(), false)
+  await page.emulateMedia({ media: 'print' })
+  assert.deepEqual(await page.evaluate(() => [...document.body.children].filter((e) => getComputedStyle(e).display !== 'none').map((e) => e.id)), ['print-root'])
+  // o mesmo motor que o app usa (Chromium) imprime de verdade
+  const r = pdfText(await page.pdf({ preferCSSPageSize: true }))
+  assert.equal(r.pages, 1)
+  assert.equal(r.text.replace(/\s/g, ''), 'Invertidasobreaordem1gamaNota:notadogama2·CENAalfaforte')
+  assert.equal(r.fonts, 3) // normal, itálico (nota) e negrito
+  await page.emulateMedia({ media: 'screen' })
+  await page.evaluate(() => dispatchEvent(new Event('afterprint')))
+  assert.equal(await page.title(), 'Cartões')
+  assert.equal(await page.innerHTML('#print-root'), '')
   assert.deepEqual(errors, [])
   await ctx.close()
 })

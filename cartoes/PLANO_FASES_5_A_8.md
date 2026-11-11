@@ -74,7 +74,24 @@ A tela de embaralhar vira o organizador.
 - **De carona:** corrigir o I6 (embaralhar repetindo a ordem com 2 peças).
 - **Testes:** reordenar, pôr de lado, salvar, reabrir após fechar, cartão novo indo para a bandeja, grupo aberto, persistência no Electron.
 
-## Fase 6 — Menu, salvo e exportação
+## Fase 6 — Menu, salvo e exportação ✅ feita em 2026-11-11
+
+**Como ficou** (detalhes, testes e o que não foi verificado em `FASE_6_DIARIO.md`):
+
+- **Pontinho de salvo** no canto: cinza = salvo, um pulso a cada gravação (não pisca sem parar), vermelho se falhar, anel vazio em aba somente leitura. No hover: "salvo às 14:32 · em disco".
+- **Menu ≡** à direita do "organizar": Exportar… (`Ctrl+E`), Importar backup… (`Ctrl+O`), Fazer backup (.json) (`Ctrl+S`), Lixeira, Instantâneos, Atalhos (`?`).
+  - Lixeira lista os excluídos e devolve o escolhido ao mesmo lugar.
+  - Instantâneos restaura com confirmação, sem console. De carona, dois bugs antigos do app desktop corrigidos: a restauração não concluía (o recarregamento era barrado) e podia se perder num empate de horário com o disco.
+- **Janela "Exportar":** ordem (salvas, a em teste, ou "a mesa como está"), modelo (texto corrido / uma seção por cartão / fichas completas), formato, pré-visualização. No app, grava pelo "Salvar como" do Windows.
+- **Formatos:** `.docx` e `.odt` gerados à mão (ZIP sem compressão + XML, sem dependência), PDF pela impressão do Electron, `.txt` e `.md`. Negrito e itálico preservados em todos, **menos no `.txt`** (texto puro não tem como).
+- **Diferenças em relação ao rascunho abaixo:**
+  - "A mesa como está" aparece sempre na lista de ordens, não só enquanto não houver ordem salva.
+  - No modelo por seção, um grupo é uma seção só.
+  - No navegador (fora do app), o PDF sai pela janela de impressão ("Salvar como PDF").
+- **Testes:** 22 novos (total 49). Os arquivos foram abertos de verdade no LibreOffice (Linux), pandoc e python-docx; o PDF, lido por poppler.
+- **Falta o dono verificar:** abrir `.docx` no **Microsoft Word** e `.odt` no LibreOffice do Windows; o "Salvar como" real; e confirmar os dois padrões assumidos (pendências 2 e 3 abaixo).
+
+Rascunho original:
 
 - **Pontinho de salvo** (pode ir já na Fase 5, ver pendências).
 - **Menu ≡** discreto: Exportar…, Importar backup…, Fazer backup (.json), Lixeira, Instantâneos (resolve "restaurar sem console"), Atalhos. Cada item mostra o atalho.
@@ -108,10 +125,10 @@ A tela de embaralhar vira o organizador.
 ## Pendências para confirmar
 
 1. **Clicável × "zero poluição":** a Fase 8 deixa a moldura levemente visível no cartão **com foco**. Isso toca o item 3 do "Conceito do cartão". Pode?
-2. **DOCX/ODT sem biblioteca:** gerar à mão (recomendado, sem dependência) ou aceitar uma biblioteca (`docx`/`jszip`)?
-3. **Pontinho de salvo** junto com a Fase 5 (é pequeno e dá confiança desde já)?
+2. **DOCX/ODT sem biblioteca:** gerar à mão (recomendado, sem dependência) ou aceitar uma biblioteca (`docx`/`jszip`)? → **Assumido na Fase 6: à mão.** Ainda aguarda o "ok" do dono; se o Word recusar o arquivo, reabrir esta decisão.
+3. **Pontinho de salvo** junto com a Fase 5 (é pequeno e dá confiança desde já)? → **Entrou na Fase 6** (assumido; aguarda o "ok" do dono).
 
 ## Não verificado / riscos
 
-- Exportação `.odt`/`.docx` gerada à mão precisa ser aberta no Word e no LibreOffice reais; os testes automáticos só conferem a estrutura.
+- Exportação `.odt`/`.docx` gerada à mão precisa ser aberta no Word e no LibreOffice reais; os testes automáticos só conferem a estrutura. (Fase 6: aberta no LibreOffice do Linux, com teste automático onde ele existe. **Word ainda não.**)
 - A Fase 7 mexe em arrasto e ímã, a parte mais delicada do app. Por isso vem com testes novos antes de mudar.

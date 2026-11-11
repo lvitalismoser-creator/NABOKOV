@@ -195,3 +195,51 @@ Padrões assumidos nesta fase, **pendentes de confirmação do dono**:
 - LibreOffice **no Windows** (aqui foi no Linux).
 - A fonte Georgia não existe neste contêiner: vi o layout com uma fonte substituta.
 - Documento muito grande (centenas de cartões): não medi tempo nem tamanho.
+
+## Bloco 5 — PDF
+
+**O que foi feito**
+
+- Formato "PDF" na janela "Exportar". O PDF **não** é montado à mão: sai da impressão do próprio motor do app, sobre o mesmo HTML da pré-visualização.
+- A página tem um `#print-root` invisível na tela. Ao exportar em PDF, ele recebe o documento inteiro; o CSS de impressão (`@media print`) esconde todo o resto e define A4 com margens de 2,5 cm (`@page`).
+- **App desktop:** a ponte `exportFile({ name, print: true })` abre o "Salvar como" e o processo principal grava o resultado de `webContents.printToPDF` (como previa o plano). O título nos metadados do PDF é o nome do arquivo.
+- **Navegador:** não há como gravar um PDF direto; o app abre a impressão do navegador e avisa: "Na janela de impressão, escolha 'Salvar como PDF'". O nome sugerido é o do arquivo.
+- `tests/helpers.cjs` ganhou `pdfText()`: lê o texto de um PDF do Chromium sem ferramenta externa (descomprime os fluxos e traduz os glifos pelas tabelas ToUnicode de cada fonte).
+
+**Decisões e motivos**
+
+- **Imprimir a própria janela, em vez de abrir uma janela escondida** só para o PDF: menos código no processo principal e uma única folha de estilo para pré-visualização, impressão do navegador e PDF do app. A ponte continua sem receber HTML da página.
+- **O diálogo vem antes de gerar o PDF**: cancelar não custa nada.
+- **Sem cabeçalho, rodapé nem número de página.** Não foi pedido; é fácil acrescentar depois se o dono quiser.
+- Cabeçalho de ficha não fica sozinho no fim da página (`break-after: avoid`); parágrafos não deixam linha órfã.
+
+**Testes**: **49 de 49** (nenhum pulado neste contêiner).
+
+- `tests/electron.test.cjs` (+1): 30 cartões exportados em PDF pelo app de verdade. Confere: cabeçalho `%PDF-` e fim `%%EOF`, várias páginas, três fontes embutidas (normal, negrito, itálico), o texto de cartões do começo, meio e fim, na ordem de leitura, acentos intactos, e que nada da interface foi para o papel. No mesmo teste, um `.docx` gravado pelo app, para provar que os bytes atravessam a ponte intactos.
+- `tests/export.test.cjs` (+1): no navegador, `window.print` é chamado uma vez, o título vira o nome do arquivo, só o `#print-root` aparece na impressão e o PDF impresso pelo Chromium traz exatamente o texto esperado; depois da impressão tudo volta ao normal.
+
+**Verificação manual nesta sessão**
+
+- `pdfinfo`: A4 (595 × 842 pt), 12 páginas num documento de 40 fichas. `pdffonts`: três fontes embutidas. `pdftotext`: texto correto e selecionável.
+- Vi a primeira página como imagem: título, cabeçalhos, negrito, itálico e margens corretos.
+
+**Não verificado**
+
+- O PDF aberto no **Adobe Reader / Edge no Windows**. Aqui foi lido por poppler (`pdftotext`, `pdftoppm`).
+- As **fontes no Windows**: o PDF usa Georgia se existir (no Windows existe); neste contêiner saiu com Liberation Serif.
+- A impressão pelo navegador de verdade (o diálogo de impressão não pode ser automatizado; o teste troca `window.print`).
+- PDF de um projeto muito grande (tempo de geração).
+
+## Fora do escopo — encontrado no caminho, não feito
+
+1. **Instantâneos do disco não aparecem na janela "Instantâneos".** A lista mostra os do IndexedDB; os de `snapshots/` (app desktop) são feitos junto, mas só se recuperam à mão se o perfil do Chromium for apagado. Sugestão: IPC para listar/ler `snapshots/` e unir as duas listas.
+2. **Exportar de dentro do organizador.** O canto (pontinho, organizar, ≡) some quando o organizador abre, então para exportar a ordem que se está vendo é preciso voltar à mesa. Sugestão para a Fase 8: um "exportar esta ordem" na barra do organizador.
+3. **A dica fixa do rodapé continua lá** (é da Fase 8). Com a janela "Atalhos" pronta, ela já pode sair.
+4. **Primeiro instantâneo de uma instalação nova é o do cartão em branco** ("0 cartões" na lista).
+5. **O `.bak` do navegador (`cartoes.bak`) e a quarentena não têm interface.** Só o console os alcança.
+6. **`npm test` depende do ambiente:** neste contêiner precisou de tela virtual, sandbox desligado e um atalho para o Chromium (Bloco 0). Não alterei `package.json`. Se o projeto for testado em Linux/CI com frequência, vale um script `test:ci`.
+7. **Versão do app continua 1.0.0** e **não gerei instalador novo** (`npm run dist` é para Windows; não foi pedido). O instalador que o dono tem ainda é o da Fase 5.
+8. **Sem "esvaziar lixeira"** e sem "criar instantâneo agora" no menu: não foram pedidos.
+9. Pendências antigas intocadas: I1, I2/I3, I7, I8, falha real de `rename` no Windows, ícone e assinatura.
+10. **Imprimir a página pelo navegador (`Ctrl+P`) fora da exportação sai em branco**, porque a impressão mostra só o documento exportado. No app desktop não há comando de imprimir, então só afeta quem usa o `index.html` no navegador.
+11. Fases 7 e 8: nada foi feito.
