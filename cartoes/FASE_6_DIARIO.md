@@ -47,3 +47,47 @@ Padrões assumidos nesta fase, **pendentes de confirmação do dono**:
 
 - Aparência no Windows real (fonte serifada e antialias diferentes do Linux).
 - O pulso em uso prolongado: se incomoda ou não, só o dono pode dizer.
+
+## Bloco 2 — menu ≡, lixeira, instantâneos e atalhos
+
+**O que foi feito**
+
+- Botão `≡` (`#menu-btn`) no canto, à direita do "organizar". Abre `#menu` com cada item e seu atalho:
+  - Importar backup… (`Ctrl+O`)
+  - Fazer backup (.json) (`Ctrl+S`)
+  - Lixeira (mostra a contagem; `T` devolve o último)
+  - Instantâneos
+  - Atalhos (`?`)
+  - "Exportar…" entra no bloco 3, junto com a janela dele.
+- Janela genérica `#sheet` (`openSheet`/`closeSheet`), usada por:
+  - **Lixeira:** excluídos do mais recente ao mais antigo, com categoria, primeiras palavras e data. "Devolver à mesa" põe o cartão de volta onde estava e mantém a janela aberta.
+  - **Instantâneos:** data, número de cartões, ordens salvas e as primeiras palavras. "Restaurar" pede confirmação na própria linha ("sim, voltar a este ponto" / "cancelar"). Resolve a pendência "restaurar sem console".
+  - **Atalhos:** mesa, cartão e organizador.
+- Teclado: com menu ou janela abertos, os atalhos da mesa (`N`, `T`, `E`…) não valem. No menu, setas andam e `Esc` fecha; na janela, `Esc` ou clique fora fecham.
+
+**Decisões e motivos**
+
+- **Ordem no canto: pontinho, organizar, ≡.** O plano diz "ao lado do embaralhar e do pontinho"; o ≡ ficou na ponta por ser o menos usado.
+- **`Ctrl+S` continua sendo o backup `.json`**, agora com rótulo no menu. Trocar o significado de um atalho que já existe confundiria.
+- **Restaurar instantâneo pede confirmação, mas não apaga nada**: o estado atual vira instantâneo antes (já era assim no console).
+- **Sem "esvaziar lixeira".** Não foi pedido e seria a única ação destrutiva do menu.
+- **Atalho `?`** para a lista de atalhos: não conflita com nada e só vale fora do texto.
+- A janela de atalhos **não** substitui ainda a dica fixa do rodapé: tirar a dica é da Fase 8.
+
+**Problemas encontrados**
+
+1. **Restaurar instantâneo não funcionava no app desktop** (bug anterior à Fase 6, nunca testado no Electron). O `will-navigate` do `electron/main.cjs` barrava toda navegação, inclusive o `location.reload()` que conclui a restauração. Corrigido: a janela pode recarregar a si mesma; qualquer outro destino continua barrado (há teste para os dois lados).
+2. **Restaurar tinha uma corrida no app desktop**: o registro restaurado recebia `savedAt = agora + 1`, e a gravação em disco disparada um instante antes podia ter o mesmo carimbo; no empate o disco vence e a restauração se perderia. Agora `restoreSnapshot()` carimba depois de todas as gravações pendentes e grava o registro restaurado também no `projeto.json` antes de recarregar. O estado anterior também vai para `snapshots/` no disco.
+3. Erro meu, pego pelo teste: plural "3 cartãoões" na lista de instantâneos.
+4. O primeiro instantâneo de uma instalação nova é o do cartão em branco de boas-vindas (o instantâneo é feito na primeira gravação). Não é erro, mas a lista mostra uma linha "0 cartões". Deixei como está.
+
+**Testes**: **34 de 34**.
+
+- `tests/menu.test.cjs` (+3): itens e atalhos do menu, teclado, backup e importar pelo menu; lixeira (lista, devolver ao mesmo lugar, atalhos bloqueados com a janela aberta) e `?`; instantâneos (confirmar, cancelar, restaurar, estado anterior guardado).
+- `tests/electron.test.cjs` (+1 e 1 ampliado): restaurar pelo menu muda a tela **e** o `projeto.json`; a janela não navega para fora do app.
+- Screenshots do menu, da lixeira e dos atalhos conferidos a olho.
+
+**Não verificado**
+
+- Instantâneos com muitos itens (20+): a lista rola, mas só vi com 1 ou 2.
+- Os instantâneos da pasta `snapshots/` do disco **não** aparecem na lista; ela mostra os do IndexedDB (que são feitos junto). Se o perfil do Chromium for apagado, os do disco só se recuperam à mão. Fora do escopo; ver "Fora do escopo" no fim.

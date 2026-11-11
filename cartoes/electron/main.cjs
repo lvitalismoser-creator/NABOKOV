@@ -111,7 +111,9 @@ function createWindow() {
     },
   })
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  win.webContents.on('will-navigate', (e) => e.preventDefault())
+  // a página só pode recarregar a si mesma (restaurar instantâneo); qualquer outro destino é barrado
+  const same = (a, b) => a.split('#')[0] === b.split('#')[0]
+  win.webContents.on('will-navigate', (e, url) => { if (!same(url, win.webContents.getURL())) e.preventDefault() })
   win.loadFile(path.join(__dirname, '..', 'index.html'))
 }
 

@@ -60,6 +60,9 @@ test('a página só enxerga a ponte do disco, sem Node', async () => {
   assert.equal(await win.evaluate(() => typeof window.cartoesDisk?.saveSync), 'function')
   assert.equal(await win.evaluate(() => typeof window.require), 'undefined')
   assert.equal(await win.evaluate(() => typeof window.process), 'undefined')
+  // a janela não navega para fora do app (só pode recarregar a si mesma)
+  await win.evaluate(() => { location.href = 'file:///etc/hostname' }); await sleep(400)
+  assert.match(win.url(), /index\.html$/)
 })
 
 test('o pontinho de salvo diz "em disco" depois que o arquivo foi gravado', async () => {
@@ -113,6 +116,23 @@ test('cria .bak e instantâneos; arquivo quebrado é preservado e recuperado do 
   assert.ok(fs.readdirSync(data).some((n) => n.startsWith('projeto.corrompido-')))
   await closeApp(app)
   assert.doesNotThrow(readFile) // o arquivo voltou a ser válido
+})
+
+test('restaurar instantâneo pelo menu vale também para o arquivo em disco', async () => {
+  // o instantâneo de abertura guarda o que já estava no arquivo
+  fs.writeFileSync(FILE, JSON.stringify({ savedAt: 5, cards: [{ id: 'a', x: 60, y: 60, doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'versao um' }] }] } }] }))
+  const { win } = await launch()
+  assert.ok(await eventually(async () => (await win.evaluate(() => cartoes.snapshots())).length))
+  await win.locator('.card .ProseMirror').click()
+  await win.keyboard.press('End'); await win.keyboard.type(' e dois')
+  await eventually(() => JSON.stringify(readFile()).includes('versao um e dois'))
+  await win.keyboard.press('Escape')
+  await win.click('#menu-btn'); await win.click('#menu [data-id="snaps"]')
+  await win.waitForSelector('#sheet .sheet-row')
+  await win.locator('#sheet .sheet-row').last().locator('button').click() // o mais antigo
+  await win.click('#sheet .sheet-row button.strong')
+  assert.ok(await eventually(async () => (await texts(win)).join() === 'versao um', { timeout: 8000 }))
+  assert.ok(await eventually(() => { const t = JSON.stringify(readFile()); return t.includes('versao um') && !t.includes('e dois') }))
 })
 
 test('a segunda instância não abre', async () => {

@@ -54,20 +54,22 @@ Abrir `index.html#demo` carrega cartões de exemplo (inclui um com estouro de te
   - **App desktop (Electron):** `electron/main.cjs` (processo principal, dono do disco) + `electron/preload.cjs` (ponte `window.cartoesDisk`; a página não vê Node). Projeto em `<userData>/cartoes/projeto.json` (`CARTOES_DATA_DIR` sobrescreve, usado nos testes), gravação atômica (tmp + fsync + rename, com retentativa em EPERM/EBUSY), `projeto.json.bak` (renovado a cada ≥30 s) e `snapshots/<ms>.json` (20 + 1 por dia, 7 dias). Arquivo ilegível nunca é sobrescrito: vai para `projeto.corrompido-<hora>.json` e carrega-se `.bak` ou o último instantâneo. Ao abrir vale o registro mais novo entre disco, IndexedDB e localStorage (empate: disco), então quem já tinha dados no navegador é migrado sem apagar a origem. No fechamento a gravação é síncrona (`saveSync`). Instância única. `Ctrl+N` fica livre.
   - Rodar: `npm start` (rebuilda e abre o Electron).
   - **Pontinho de salvo** (`#save-dot`, canto superior direito, Fase 6): `data-state` = `saved` (cinza), `dirty` (mudança ainda não gravada), `saving` (um pulso por gravação), `failed` (vermelho), `ro` (somente leitura). Texto só no hover (`data-tip`): "salvo às 14:32 · em disco" / "· neste navegador" / "· demonstração". Só diz "salvo" depois que o destino principal confirmou. `setDot()` em `src/main.js`.
-  - `Ctrl+S` (na mesa) exporta `.json` com cartões, lixeira e ordens; `Ctrl+O` importa (só acrescenta; ordens nomeadas entram como "(importada)", com os ids novos). Console: `cartoes.snapshots()`, `cartoes.restore(t)`, `cartoes.trash()`, `cartoes.ordens()`.
-- Atalhos: `E` abre o organizador; duplo clique no fundo ou `N` cria cartão; `Ctrl/⌘+Enter` cria o próximo ao lado; `Esc` tira o foco; `Backspace` em cartão vazio o apaga. (`Ctrl+N` é reservado pelo navegador; resolver no app desktop.)
+  - `Ctrl+S` (na mesa) faz o backup `.json` com cartões, lixeira e ordens; `Ctrl+O` importa (só acrescenta; ordens nomeadas entram como "(importada)", com os ids novos). Console: `cartoes.snapshots()`, `cartoes.restore(t)`, `cartoes.trash()`, `cartoes.ordens()`.
+- **Menu ≡ (Fase 6)**: `#menu-btn` no canto (pontinho, organizar, ≡). Itens em `MENU` (`src/main.js`), cada um com o atalho ao lado: Importar backup…, Fazer backup (.json), Lixeira, Instantâneos, Atalhos. As janelas usam `#sheet` (`openSheet(título)` devolve o corpo; `closeSheet()`). Com menu ou janela abertos, os atalhos da mesa não valem (o `keydown` global devolve cedo para `menuKey`/`sheetKey`).
+  - Lixeira: lista e devolve ao mesmo lugar. Instantâneos: restaurar com confirmação na linha (`restoreSnapshot(t)`); o estado atual vira instantâneo antes, e no app desktop o registro restaurado é gravado também no `projeto.json`.
+  - No Electron a janela só pode recarregar a si mesma (`will-navigate`); é o que conclui a restauração.
+- Atalhos: `?` lista os atalhos; `E` abre o organizador; duplo clique no fundo ou `N` cria cartão; `Ctrl/⌘+Enter` cria o próximo ao lado; `Esc` tira o foco; `Backspace` em cartão vazio o apaga. (`Ctrl+N` é reservado pelo navegador; resolver no app desktop.)
 - Interface em português (pt-BR).
 
 ## Próximos passos
 
 **O plano vigente é `PLANO_FASES_5_A_8.md`** (decidido com o dono em 2026-11-03): Fase 5 organizador (feita), 6 menu + indicador de salvo + exportação docx/odt/pdf, 7 mesa (pan/zoom/modo mapa, tamanhos P/M/G, seleção múltipla), 8 revisão de interface. A lista abaixo é a antiga; o que nela não estiver no plano continua valendo como pendência.
 
-Feitos: app desktop em Electron, arquivo `.json` em disco, `Ctrl+N` livre, salvamento robusto, testes, instalador, organizador (resolve também o I6).
+Feitos: restaurar instantâneo sem console (menu ≡, Fase 6), app desktop em Electron, arquivo `.json` em disco, `Ctrl+N` livre, salvamento robusto, testes, instalador, organizador (resolve também o I6).
 
 0. **Pendências da revisão (pequenas, fazer primeiro):**
    - **I1** cartões ficam fora da tela se a janela diminuir (posições são da janela): trazer à vista ao abrir/redimensionar.
    - **I2/I3** grupo parcialmente guardado: `cleanGroups` conta guardados e `renderGroups` só os da mesa; restaurar um cartão de grupo o devolve longe do grupo.
-   - Restaurar instantâneo sem console (hoje só `cartoes.snapshots()` / `cartoes.restore(t)`), com atalho discreto.
    - I6 (`shuffled` pode repetir ordem com 2 unidades), I7 (sem `undoInputRule` no Backspace), I8 (Backspace apaga cartão só com espaços sem desfazer).
    - Teste de falha real de `rename` no Windows (antivírus segurando o arquivo); testar o instalador instalado de fato.
 1. **Usar o app instalado alguns dias** (o dono) antes de decidir o resto.
@@ -97,7 +99,8 @@ npm run test:electron # app desktop; isolado por CARTOES_DATA_DIR (arquivo e per
 ```
 
 - `tests/browser.test.cjs`: salvar, demo isolado, JSON ilegível, quarentena, aviso de falha, IndexedDB x espelho, aba única, teto de espera, lixeira, exportar/importar, instantâneos.
-- `tests/electron.test.cjs`: ponte sem Node, gravação ao fechar, disco como fonte, `.bak`/instantâneos/recuperação, instância única, ordens no `projeto.json`.
+- `tests/electron.test.cjs`: ponte sem Node e sem navegar para fora, pontinho "em disco", restaurar instantâneo no arquivo, gravação ao fechar, disco como fonte, `.bak`/instantâneos/recuperação, instância única, ordens no `projeto.json`.
+- `tests/menu.test.cjs` (Fase 6): pontinho de salvo (estados, hover, falha, somente leitura, demo), menu ≡ (itens, teclado, backup, importar), lixeira, instantâneos, atalhos.
 - `tests/organizer.test.cjs`: ordem de leitura da mesa, mover (teclado e arrasto), pôr de lado, notas, salvar com nome, bandeja, separar grupo, embaralhar (I6), dispor na mesa + desfazer, Ctrl+Z, lixeira devolve ao lugar, exportar/importar ordens, demo isolado.
 - Depois de `goto`, espere `.ProseMirror-focused` antes de digitar: a inicialização é assíncrona e teclas antes disso caem nos atalhos globais.
 - Nunca rode testes sem `CARTOES_DATA_DIR` no Electron: sem isso eles gravam no perfil real do usuário.

@@ -649,13 +649,13 @@ function removeCard(c, { undoable }) {
 }
 
 /* Devolve da lixeira o cartão com este id (o mais recente, se omitido). */
-function reviveFromTrash(id) {
+function reviveFromTrash(id, { focus = true } = {}) {
   const i = id ? trash.findIndex((d) => d.id === id) : trash.length - 1
   if (i < 0) return null
   const [d] = trash.splice(i, 1)
   const data = { ...d }
   if (cards.has(data.id)) data.id = undefined
-  const c = createCard(data, { animate: true, focus: true })
+  const c = createCard(data, { animate: true, focus })
   cleanGroups(); renderGroups(); syncEmpty(); save()
   return c
 }
@@ -1539,6 +1539,8 @@ function orgKey(e) {
 }
 
 addEventListener('keydown', (e) => {
+  if (!sheet.hidden) { sheetKey(e); return }
+  if (!menu.hidden) { menuKey(e); return }
   if (!show.hidden) { orgKey(e); return }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
     const m = e.key.toLowerCase()
@@ -1552,6 +1554,7 @@ addEventListener('keydown', (e) => {
   if (k === 'n') { e.preventDefault(); newCardAt(...freeSpot()) }
   else if (k === 't') { e.preventDefault(); reopenLast() }
   else if (k === 'e') { e.preventDefault(); openOrg() }
+  else if (e.key === '?') { e.preventDefault(); openKeys() }
 }, true)
 
 /* ------------------------------------------------------------------ *
@@ -1616,9 +1619,219 @@ function importJSON() {
   inp.click()
 }
 
-/* Recuperação por instantâneo (sem interface por enquanto): no console,
- *   await cartoes.snapshots()   → lista
- *   await cartoes.restore(t)    → volta ao instantâneo t (o estado atual vira instantâneo antes) */
+/* Volta ao instantâneo t. O estado atual vira instantâneo antes: restaurar nunca apaga nada. */
+async function restoreSnapshot(t) {
+  if (readOnly) return 'Esta aba é somente leitura'
+  const snap = (await idbSnapList()).find((x) => x.savedAt === t)
+  if (!snap) return 'Instantâneo não encontrado'
+  flush()
+  const cur = { savedAt: Date.now(), cards: [...cards.values()].map(snapshotOf), trash, org }
+  await idbSnap(cur)
+  disk?.snapshot(cur).catch(() => {})
+  ready = false // impede que o pagehide do reload regrave o estado antigo por cima
+  // estritamente mais novo que qualquer gravação já feita, em todos os destinos (no app desktop, o arquivo)
+  const rec = { savedAt: Date.now() + 1, cards: snap.cards, trash: snap.trash || [], org: saneOrg(snap.org) }
+  await idbPut(rec)
+  lsSet(STORE, JSON.stringify(rec.cards)); lsSet(STORE + '.t', String(rec.savedAt)); lsSet(TRASH_KEY, JSON.stringify(rec.trash))
+  lsSet(ORG_KEY, JSON.stringify(rec.org))
+  if (disk) { try { await disk.save(rec) } catch {} }
+  location.reload()
+  return 'Restaurando…'
+}
+
+/* ------------------------------------------------------------------ *
+ *  Menu ≡ e suas janelas: backup, lixeira, instantâneos, atalhos.
+ *  Tudo o que é secundário mora aqui; a mesa continua limpa.
+ * ------------------------------------------------------------------ */
+const menuBtn = document.getElementById('menu-btn')
+const menu = document.getElementById('menu')
+const sheet = document.getElementById('sheet')
+const sheetBox = sheet.querySelector('.sheet-box')
+const sheetTitle = document.getElementById('sheet-title')
+const sheetBody = document.getElementById('sheet-body')
+
+const h = (tag, cls, text) => {
+  const el = document.createElement(tag)
+  if (cls) el.className = cls
+  if (text != null) el.textContent = text
+  return el
+}
+
+const MENU = [
+  { id: 'import', label: 'Importar backup…', key: 'Ctrl+O', run: () => importJSON() },
+  { id: 'backup', label: 'Fazer backup (.json)', key: 'Ctrl+S', run: () => exportJSON() },
+  null,
+  { id: 'trash', label: () => 'Lixeira' + (trash.length ? ` (${trash.length})` : ''), key: 'T devolve o último', run: () => openTrash() },
+  { id: 'snaps', label: 'Instantâneos', key: 'voltar no tempo', run: () => openSnaps() },
+  null,
+  { id: 'keys', label: 'Atalhos', key: '?', run: () => openKeys() },
+]
+
+function openMenu() {
+  menu.replaceChildren()
+  for (const it of MENU) {
+    if (!it) { menu.append(h('hr')); continue }
+    const b = h('button')
+    b.setAttribute('role', 'menuitem')
+    b.dataset.id = it.id
+    b.append(h('span', '', typeof it.label === 'function' ? it.label() : it.label), h('kbd', '', it.key || ''))
+    b.onclick = () => { closeMenu(); it.run() }
+    menu.append(b)
+  }
+  menu.hidden = false
+  menuBtn.setAttribute('aria-expanded', 'true')
+}
+function closeMenu() {
+  menu.hidden = true
+  menuBtn.setAttribute('aria-expanded', 'false')
+}
+menuBtn.onclick = () => (menu.hidden ? openMenu() : closeMenu())
+addEventListener('pointerdown', (e) => {
+  if (!menu.hidden && !menu.contains(e.target) && !menuBtn.contains(e.target)) closeMenu()
+}, true)
+
+function menuKey(e) {
+  const items = [...menu.querySelectorAll('button')]
+  const i = items.indexOf(document.activeElement)
+  if (e.key === 'Escape') { closeMenu(); menuBtn.focus() }
+  else if (e.key === 'ArrowDown') items[(i + 1) % items.length].focus()
+  else if (e.key === 'ArrowUp') items[(i - 1 + items.length) % items.length].focus()
+  else return // Enter e espaço ficam com o botão em foco; o resto não chega aos atalhos da mesa
+  e.preventDefault(); e.stopPropagation()
+}
+
+function openSheet(title, { wide = false } = {}) {
+  closeMenu()
+  sheetTitle.textContent = title
+  sheetBody.replaceChildren()
+  sheet.classList.toggle('wide', wide)
+  sheet.dataset.kind = ''
+  sheet.hidden = false
+  sheetBox.focus()
+  return sheetBody
+}
+function closeSheet() { sheet.hidden = true; sheetBody.replaceChildren() }
+document.getElementById('sheet-close').onclick = closeSheet
+sheet.addEventListener('pointerdown', (e) => { if (e.target === sheet) closeSheet() })
+function sheetKey(e) {
+  // com uma janela aberta, nenhum atalho da mesa vale; os campos dela cuidam das próprias teclas
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSheet() }
+}
+
+const docText = (d) => (d?.content || []).map((p) => (p.content || []).map((t) => t.text || '').join('')).join(' ').replace(/\s+/g, ' ').trim()
+const clip = (t, n) => { const w = t.split(' '); return w.slice(0, n).join(' ') + (w.length > n ? '…' : '') }
+
+/* ---------- lixeira ---------- */
+function openTrash() {
+  const body = openSheet('Lixeira')
+  sheet.dataset.kind = 'trash'
+  const draw = () => {
+    body.replaceChildren()
+    if (!trash.length) { body.append(h('p', 'sheet-empty', 'A lixeira está vazia.')); return }
+    body.append(h('p', 'sheet-lead', `Os últimos cartões excluídos (até ${TRASH_MAX}). Devolver põe o cartão de volta onde estava.`))
+    for (const d of [...trash].reverse()) {
+      const row = h('div', 'sheet-row')
+      const main = h('div', 'r-main')
+      const text = h('div', 'r-text')
+      if (d.cat) text.append(h('span', 'r-cat', CAT_LABEL[d.cat]))
+      text.append(clip(docText(d.doc), 14))
+      main.append(text, h('div', 'r-meta', 'excluído em ' + when(d.deletedAt || Date.now())))
+      const back = h('button', '', 'devolver à mesa')
+      back.onclick = () => {
+        if (blocked()) return
+        reviveFromTrash(d.id, { focus: false })
+        say('Cartão devolvido à mesa')
+        draw()
+      }
+      row.append(main, back)
+      body.append(row)
+    }
+  }
+  draw()
+}
+
+/* ---------- instantâneos ---------- */
+async function openSnaps() {
+  const body = openSheet('Instantâneos')
+  sheet.dataset.kind = 'snaps'
+  const list = (await idbSnapList()).sort((a, b) => b.savedAt - a.savedAt)
+  if (sheet.hidden || sheet.dataset.kind !== 'snaps') return
+  if (!list.length) {
+    body.append(h('p', 'sheet-empty', DEMO_MODE
+      ? 'A demonstração não guarda instantâneos.'
+      : 'Ainda não há instantâneos. Eles são feitos sozinhos, a cada 5 minutos de trabalho.'))
+    return
+  }
+  body.append(h('p', 'sheet-lead', 'Cópias automáticas do projeto inteiro, feitas a cada 5 minutos de trabalho. Restaurar não apaga nada: o estado de agora é guardado como instantâneo antes.'))
+  for (const s of list) {
+    const row = h('div', 'sheet-row')
+    const main = h('div', 'r-main')
+    const n = s.cards.filter((c) => docText(c.doc)).length
+    const nOrd = (s.org?.orders || []).filter((o) => o?.name).length
+    main.append(
+      h('div', 'r-text', when(s.savedAt)),
+      h('div', 'r-meta', `${n} ${n === 1 ? 'cartão' : 'cartões'}` + (nOrd ? ` · ${nOrd} ordem${nOrd === 1 ? '' : 'ns'} salva${nOrd === 1 ? '' : 's'}` : '') +
+        (n ? ' · ' + clip(s.cards.map((c) => docText(c.doc)).find(Boolean), 8) : '')),
+    )
+    const ask = h('button', '', 'restaurar')
+    ask.onclick = () => {
+      if (blocked()) return
+      body.querySelectorAll('.sheet-row.confirm').forEach((r) => r.querySelector('.cancel').click())
+      const yes = h('button', 'strong', 'sim, voltar a este ponto')
+      const no = h('button', 'cancel', 'cancelar')
+      row.classList.add('confirm')
+      ask.replaceWith(yes, no)
+      no.onclick = () => { row.classList.remove('confirm'); yes.remove(); no.replaceWith(ask) }
+      yes.onclick = async () => {
+        yes.disabled = no.disabled = true
+        const r = await restoreSnapshot(s.savedAt)
+        if (r !== 'Restaurando…') { say(r); no.disabled = false; no.click() }
+      }
+    }
+    row.append(main, ask)
+    body.append(row)
+  }
+}
+
+/* ---------- atalhos ---------- */
+const KEYS = [
+  ['Na mesa', [
+    ['Duplo clique no fundo · N', 'novo cartão'],
+    ['E', 'organizar: testar ordens de leitura'],
+    ['T', 'devolver o último cartão excluído'],
+    ['Encostar um cartão em outro', 'agrupar (Shift + arrastar solta do grupo)'],
+    ['Ctrl+S', 'fazer backup (.json)'],
+    ['Ctrl+O', 'importar backup'],
+    ['?', 'esta lista'],
+  ]],
+  ['Escrevendo num cartão', [
+    ['Ctrl+Enter', 'novo cartão ao lado'],
+    ['Esc', 'sair do cartão'],
+    ['**texto** · Ctrl+B', 'negrito'],
+    ['*texto* · Ctrl+I', 'itálico'],
+    ['Backspace no cartão vazio', 'apaga o cartão'],
+  ]],
+  ['No organizador', [
+    ['← →', 'ler a peça anterior / a próxima'],
+    ['Alt + ← →', 'mover a peça'],
+    ['↑ ↓', 'pôr de lado / devolver à leitura'],
+    ['R', 'embaralhar'],
+    ['C', 'notas'],
+    ['Ctrl+S', 'salvar a ordem'],
+    ['Ctrl+Z', 'desfazer'],
+    ['Esc', 'voltar à mesa'],
+  ]],
+]
+function openKeys() {
+  const body = openSheet('Atalhos')
+  sheet.dataset.kind = 'keys'
+  for (const [title, rows] of KEYS) {
+    body.append(h('h3', 'keys-h', title))
+    const dl = h('dl', 'keys-grid')
+    for (const [k, what] of rows) dl.append(h('dt', '', disk && k === 'Duplo clique no fundo · N' ? k + ' · Ctrl+N' : k), h('dd', '', what))
+    body.append(dl)
+  }
+}
 window.cartoes = {
   export: exportJSON,
   import: importCards,
@@ -1626,21 +1839,7 @@ window.cartoes = {
   reopen: (id) => reviveFromTrash(id),
   ordens: () => JSON.parse(JSON.stringify(org)),
   snapshots: async () => (await idbSnapList()).map((s) => ({ t: s.savedAt, quando: new Date(s.savedAt).toLocaleString(), cartoes: s.cards.length })),
-  restore: async (t) => {
-    if (readOnly) return 'Esta aba é somente leitura'
-    const snap = (await idbSnapList()).find((s) => s.savedAt === t)
-    if (!snap) return 'Instantâneo não encontrado'
-    const now = Date.now()
-    flush()
-    await idbSnap({ savedAt: now, cards: [...cards.values()].map(snapshotOf), trash, org })
-    ready = false // impede que o pagehide do reload regrave o estado antigo por cima
-    const rec = { savedAt: now + 1, cards: snap.cards, trash: snap.trash || [], org: saneOrg(snap.org) }
-    await idbPut(rec)
-    lsSet(STORE, JSON.stringify(rec.cards)); lsSet(STORE + '.t', String(rec.savedAt)); lsSet(TRASH_KEY, JSON.stringify(rec.trash))
-    lsSet(ORG_KEY, JSON.stringify(rec.org))
-    location.reload()
-    return 'Restaurando…'
-  },
+  restore: (t) => restoreSnapshot(t),
 }
 
 /* ------------------------------------------------------------------ *
