@@ -3,7 +3,7 @@
  * Projeto em <userData>/cartoes/projeto.json, gravado de forma atômica
  * (arquivo temporário + fsync + rename, com retentativa no Windows),
  * com projeto.json.bak e instantâneos rotativos em snapshots/. */
-const { app, BrowserWindow, ipcMain, Menu } = require('electron')
+const { app, BrowserWindow, ipcMain, Menu, dialog, shell } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -100,6 +100,35 @@ ipcMain.handle('disk:load', (e) => (fromApp(e) ? safe(loadProject)() : { rec: nu
 ipcMain.handle('disk:save', (e, rec) => fromApp(e) && safe(saveProject)(rec))
 ipcMain.on('disk:saveSync', (e, rec) => { e.returnValue = fromApp(e) && safe(saveProject)(rec) })
 ipcMain.handle('disk:snapshot', (e, rec) => fromApp(e) && safe(saveSnapshot)(rec))
+
+/* Exportar: o arquivo sai pelo diálogo "Salvar como" do sistema. A página manda o nome
+ * sugerido e os bytes; quem escolhe a pasta é sempre o usuário, no diálogo. */
+const EXPORT_EXT = ['docx', 'odt', 'pdf', 'txt', 'md']
+let lastExportDir = null, lastExportFile = null
+async function exportFile(req) {
+  const name = path.basename(String(req?.name || '')).replace(/[\\/:*?"<>|]/g, ' ').trim()
+  const ext = path.extname(name).slice(1).toLowerCase()
+  const data = req?.data
+  if (!name || !EXPORT_EXT.includes(ext) || !ArrayBuffer.isView(data) || data.byteLength > 256 * 1024 * 1024) return { ok: false }
+  const r = await dialog.showSaveDialog(win, {
+    title: 'Exportar',
+    defaultPath: path.join(lastExportDir || app.getPath('documents'), name),
+    filters: [{ name: String(req.label || ext).slice(0, 60), extensions: [ext] }],
+  })
+  if (r.canceled || !r.filePath) return { canceled: true }
+  try {
+    fs.writeFileSync(r.filePath, Buffer.from(data.buffer, data.byteOffset, data.byteLength))
+  } catch (e) {
+    // o caso comum no Windows: o arquivo está aberto no Word (EBUSY/EPERM)
+    return { ok: false, error: e.code || 'erro' }
+  }
+  lastExportDir = path.dirname(r.filePath)
+  lastExportFile = r.filePath
+  return { ok: true, path: r.filePath }
+}
+ipcMain.handle('export:save', (e, req) => (fromApp(e) ? exportFile(req).catch(() => ({ ok: false })) : { ok: false }))
+// só mostra na pasta o último arquivo que o próprio usuário acabou de exportar
+ipcMain.handle('export:reveal', (e) => { if (fromApp(e) && lastExportFile) shell.showItemInFolder(lastExportFile) })
 
 let win
 function createWindow() {

@@ -7,4 +7,7 @@ contextBridge.exposeInMainWorld('cartoesDisk', {
   save: (rec) => ipcRenderer.invoke('disk:save', rec),
   saveSync: (rec) => ipcRenderer.sendSync('disk:saveSync', rec), // para o fechamento da janela
   snapshot: (rec) => ipcRenderer.invoke('disk:snapshot', rec),
+  // exportar: abre o "Salvar como" do sistema e grava os bytes no arquivo escolhido
+  exportFile: (req) => ipcRenderer.invoke('export:save', req),
+  reveal: () => ipcRenderer.invoke('export:reveal'),
 })

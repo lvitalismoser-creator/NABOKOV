@@ -135,6 +135,41 @@ test('restaurar instantâneo pelo menu vale também para o arquivo em disco', as
   assert.ok(await eventually(() => { const t = JSON.stringify(readFile()); return t.includes('versao um') && !t.includes('e dois') }))
 })
 
+/** Troca o "Salvar como" do sistema por uma resposta pronta (não dá para clicar num diálogo nativo). */
+const answerSaveDialog = (app, filePath) => app.evaluate(({ dialog }, p) => {
+  dialog.showSaveDialog = async (_w, opts) => { global.__asked = opts; return p ? { canceled: false, filePath: p } : { canceled: true } }
+}, filePath)
+
+test('exportar grava o arquivo escolhido no "Salvar como"; cancelar não grava nada', async () => {
+  const { app, win } = await launch()
+  await win.keyboard.type('texto para ')
+  await win.keyboard.type('**exportar**')
+  await win.keyboard.press('Escape')
+  const out = path.join(data, 'saida', 'meu livro.md')
+  fs.mkdirSync(path.dirname(out))
+
+  await answerSaveDialog(app, null)                               // usuário cancela
+  await win.keyboard.press('Control+e')
+  await win.locator('#sheet .x-opt', { hasText: 'Markdown (.md)' }).click()
+  await win.click('#x-go'); await sleep(400)
+  assert.equal(fs.existsSync(out), false)
+  assert.equal(await win.locator('#sheet').isVisible(), true)     // a janela continua aberta
+
+  await answerSaveDialog(app, out)
+  await win.click('#x-go')
+  assert.ok(await eventually(() => fs.existsSync(out)))
+  assert.equal(fs.readFileSync(out, 'utf8'), 'texto para **exportar**\n')
+  const asked = await app.evaluate(() => global.__asked)
+  assert.match(path.basename(asked.defaultPath), /^cartoes-\d{4}-\d{2}-\d{2}\.md$/)
+  assert.deepEqual(asked.filters[0].extensions, ['md'])
+  assert.match(await win.textContent('#toast'), /Exportado: meu livro\.md/)
+  assert.equal(await win.locator('#sheet').isVisible(), false)
+
+  // a ponte recusa o que não é exportação: extensão estranha ou dados que não são bytes
+  assert.deepEqual(await win.evaluate(() => window.cartoesDisk.exportFile({ name: 'x.exe', data: new Uint8Array(1) })), { ok: false })
+  assert.deepEqual(await win.evaluate(() => window.cartoesDisk.exportFile({ name: 'x.txt', data: 'texto' })), { ok: false })
+})
+
 test('a segunda instância não abre', async () => {
   await launch()
   const electronBin = require('electron')

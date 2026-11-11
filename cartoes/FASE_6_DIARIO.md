@@ -91,3 +91,57 @@ Padrões assumidos nesta fase, **pendentes de confirmação do dono**:
 
 - Instantâneos com muitos itens (20+): a lista rola, mas só vi com 1 ou 2.
 - Os instantâneos da pasta `snapshots/` do disco **não** aparecem na lista; ela mostra os do IndexedDB (que são feitos junto). Se o perfil do Chromium for apagado, os do disco só se recuperam à mão. Fora do escopo; ver "Fora do escopo" no fim.
+
+## Bloco 3 — janela "Exportar", modelos, TXT e Markdown
+
+**O que foi feito**
+
+- **`src/export.mjs`** (novo, puro: sem DOM nem Electron, testável direto no Node). O caminho é sempre: peças da ordem → `buildDoc()` → documento intermediário (`{ title, blocks }`) → um renderizador por formato. Os próximos formatos (DOCX, ODT, PDF) só acrescentam renderizadores.
+- **Janela "Exportar"** (menu ≡ → Exportar…, ou `Ctrl+E`), na mesma `#sheet`, em versão larga:
+  - **Ordem:** cada ordem salva (a mais recente primeiro), a ordem em teste (se houver) e "a mesa como está". Vem escolhida a ordem aberta no organizador; sem nenhuma, a mesa.
+  - **Modelo:** texto corrido / uma seção por cartão / fichas completas.
+  - **Formato:** neste bloco, Texto (.txt) e Markdown (.md).
+  - **Pré-visualização** dos primeiros 14 blocos, numa "folha" à direita.
+  - Rodapé com a contagem ("2 cartões · 1 de lado fica de fora") e o botão "exportar".
+  - O último modelo e formato usados ficam lembrados (`localStorage` `cartoes.ui.exportar`).
+- **Salvar:** no app desktop, pelo "Salvar como" do sistema (IPC novo `export:save` em `electron/main.cjs`, ponte `cartoesDisk.exportFile` no `preload.cjs`); o aviso final tem "mostrar na pasta" (`export:reveal`). No navegador, vira download.
+
+**Os três modelos**
+
+| Modelo | O que sai |
+|---|---|
+| texto corrido | Só os parágrafos, um depois do outro, sem marca de onde termina um cartão. |
+| uma seção por cartão | Cada peça (cartão ou grupo) é uma seção; entre elas, `* * *` centralizado. |
+| fichas completas | Título (nome da ordem), nota geral da ordem, e por cartão: "N · Categoria", o texto e a nota daquele ponto da ordem. |
+
+**Decisões e motivos**
+
+- **"A mesa como está" aparece sempre**, não só "enquanto não houver ordem salva" (texto do plano). Custa uma linha e evita ter de criar uma ordem só para exportar. Reavaliar se o dono preferir esconder.
+- **A ordem em teste também pode ser exportada.** É o que o usuário está vendo no organizador naquele momento.
+- **No modelo "por seção", o grupo é uma seção só.** No organizador a peça é a unidade; quem quiser cada cartão separado usa "separar o grupo nesta ordem".
+- **Parágrafos vazios e cartões vazios não saem** em nenhum modelo.
+- **Cartões guardados na gaveta saem se estiverem na ordem** (igual ao organizador); na opção "mesa" não saem, porque não estão na mesa.
+- **`.txt` não tem negrito nem itálico** (texto puro não tem como). O plano dizia "preservados em todos"; na janela o formato avisa "sem negrito nem itálico". Sai em UTF-8 com BOM e quebras CRLF, para o Bloco de Notas do Windows acertar os acentos.
+- **`.md` escapa o que pareceria marcação** (`*`, `_`, `#` no início da linha, `<`…), para o texto do autor chegar igual.
+- **`Ctrl+E`** para exportar; `Ctrl+S` continua sendo o backup.
+- **Exportar nunca altera nada**: não mexe na mesa nem nas ordens.
+- **Segurança da ponte:** o processo principal só grava no caminho que o usuário escolheu no diálogo; recusa extensão fora de docx/odt/pdf/txt/md e dados que não sejam bytes. "Mostrar na pasta" só vale para o último arquivo exportado.
+
+**Testes**: **42 de 42**.
+
+- `tests/export.test.cjs` (novo, 7):
+  - `export.mjs` no Node: os três modelos; `.txt` (BOM, CRLF, texto na ordem); `.md` (negrito/itálico, escapes, espaços nas pontas); HTML da pré-visualização sempre escapado.
+  - Janela no navegador: sem ordem usa a mesa; baixa `.txt` e `.md` e confere o conteúdo byte a byte; ordem salva vem escolhida, o de lado fica de fora, fichas levam as notas; mesa vazia só avisa.
+- `tests/electron.test.cjs` (+1): com o diálogo respondido pelo teste, o arquivo aparece no caminho escolhido com o conteúdo certo; cancelar não grava e mantém a janela; a ponte recusa `.exe` e dados que não são bytes.
+- Screenshot da janela conferido a olho.
+
+**Problemas**
+
+- Erro meu no teste: `TextDecoder` remove o BOM por padrão, e o teste cortava a primeira letra. Corrigido no teste (o arquivo estava certo).
+
+**Não verificado**
+
+- O "Salvar como" **de verdade** (o diálogo nativo do Windows): o teste troca o diálogo por uma resposta pronta, porque não há como clicar nele. O caminho depois do diálogo é o real.
+- "Mostrar na pasta" (abre o Explorer): não testado.
+- Abrir o `.txt` no Bloco de Notas do Windows.
+- Gravar por cima de um arquivo aberto no Word (o código devolve o aviso "está aberto em outro programa?", mas não reproduzi o erro real).

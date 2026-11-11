@@ -5,6 +5,7 @@ import { keymap } from 'prosemirror-keymap'
 import { history, undo, redo } from 'prosemirror-history'
 import { baseKeymap, toggleMark } from 'prosemirror-commands'
 import { inputRules, InputRule } from 'prosemirror-inputrules'
+import { MODELS, FORMATS, buildDoc, countCards, fileName, toHTML, render as renderFile } from './export.mjs'
 
 /* ------------------------------------------------------------------ *
  *  Schema mínimo: parágrafos, negrito e itálico. Nada além disso.
@@ -672,11 +673,12 @@ function showUndo(snapshot) {
   sayUndo('Cartão excluído', () => reviveFromTrash(snapshot.id))
 }
 
-/* Aviso com um botão "desfazer" (some sozinho em 6 s). */
-function sayUndo(msg, fn) {
+/* Aviso com um botão de ação (some sozinho em 6 s). */
+const sayUndo = (msg, fn) => sayAct(msg, 'desfazer', fn)
+function sayAct(msg, label, fn) {
   toast.textContent = msg
   const b = document.createElement('button')
-  b.textContent = 'desfazer'
+  b.textContent = label
   b.onclick = () => { toast.classList.remove('show'); fn() }
   toast.append(b)
   toast.classList.add('show')
@@ -1546,6 +1548,7 @@ addEventListener('keydown', (e) => {
     const m = e.key.toLowerCase()
     if (m === 's') { e.preventDefault(); exportJSON(); return }
     if (m === 'o') { e.preventDefault(); importJSON(); return }
+    if (m === 'e') { e.preventDefault(); openExport(); return }
     // Ctrl+N é reservado pelo navegador; no app desktop fica livre
     if (m === 'n' && disk) { e.preventDefault(); newCardAt(...freeSpot()); return }
   }
@@ -1565,13 +1568,17 @@ function exportJSON() {
     app: 'cartoes', version: 2, exportedAt: new Date().toISOString(),
     cards: [...cards.values()].map(snapshotOf), trash, org,
   }
-  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }))
+  download(`cartoes-${new Date().toISOString().slice(0, 10)}.json`, new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }))
+  say(`Backup feito: ${cards.size} cartão(ões)`)
+}
+
+function download(name, blob) {
+  const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `cartoes-${new Date().toISOString().slice(0, 10)}.json`
+  a.download = name
   document.body.append(a); a.click(); a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
-  say(`Exportei ${cards.size} cartão(ões)`)
 }
 
 function importCards(text) {
@@ -1658,6 +1665,8 @@ const h = (tag, cls, text) => {
 }
 
 const MENU = [
+  { id: 'export', label: 'Exportar…', key: 'Ctrl+E', run: () => openExport() },
+  null,
   { id: 'import', label: 'Importar backup…', key: 'Ctrl+O', run: () => importJSON() },
   { id: 'backup', label: 'Fazer backup (.json)', key: 'Ctrl+S', run: () => exportJSON() },
   null,
@@ -1720,6 +1729,126 @@ function sheetKey(e) {
 
 const docText = (d) => (d?.content || []).map((p) => (p.content || []).map((t) => t.text || '').join('')).join(' ').replace(/\s+/g, ' ').trim()
 const clip = (t, n) => { const w = t.split(' '); return w.slice(0, n).join(' ') + (w.length > n ? '…' : '') }
+
+/* ---------- exportar: ordem + modelo + formato → documento ---------- */
+const UI_EXPORT = 'cartoes.ui.exportar'
+const cardData = (c) => ({ cat: c.cat, doc: c.view.state.doc.toJSON() })
+
+/* De onde pode sair o documento: cada ordem salva, a ordem em teste e a mesa como está. */
+function exportSources() {
+  const list = []
+  for (const o of org.orders.filter((x) => x.name).sort((a, b) => b.updatedAt - a.updatedAt)) list.push({ id: o.id, label: `«${o.name}»`, order: o })
+  const test = org.orders.find((x) => !x.name)
+  if (test) list.push({ id: test.id, label: 'ordem em teste, sem nome', order: test })
+  list.push({ id: 'mesa', label: 'a mesa como está', hint: 'de cima para baixo, da esquerda para a direita' })
+  return list
+}
+
+/* Peças que entram no documento. Numa ordem, o que está de lado fica de fora. */
+function exportInput(src) {
+  if (!src.order) return { title: '', orderNote: '', aside: 0, pieces: mesaUnits().map((u) => ({ cards: u.map(cardData), note: '' })) }
+  const o = src.order
+  const all = piecesOf(o)
+  return {
+    title: o.name || '', orderNote: o.note || '',
+    aside: all.filter((p) => p.it.aside).length,
+    pieces: all.filter((p) => !p.it.aside).map((p) => ({ cards: p.cs.map(cardData), note: o.notes[leadOf(p).id] || '' })),
+  }
+}
+
+/* Grava o arquivo: no app desktop, pelo diálogo "Salvar como" do sistema; no navegador, como download. */
+async function saveFile(name, bytes, f) {
+  if (disk?.exportFile) {
+    try { return await disk.exportFile({ name, data: bytes, label: f.label }) } catch { return { ok: false } }
+  }
+  download(name, new Blob([bytes], { type: f.mime }))
+  return { ok: true }
+}
+
+function openExport() {
+  const sources = exportSources()
+  if (!sources.some((x) => exportInput(x).pieces.length)) { say('Escreva em algum cartão antes de exportar'); return }
+  let mem = {}
+  try { mem = JSON.parse(lsGet(UI_EXPORT)) || {} } catch {}
+  const st = {
+    src: (sources.find((x) => x.id === org.cur) || sources[0]).id,
+    model: MODELS.some((m) => m.id === mem.model) ? mem.model : MODELS[0].id,
+    format: FORMATS.some((f) => f.id === mem.format) ? mem.format : FORMATS[0].id,
+  }
+  const body = openSheet('Exportar', { wide: true })
+  sheet.dataset.kind = 'export'
+  const form = h('div', 'x-form')
+  const side = h('div', 'x-side')
+  const page = h('div', 'x-page xdoc')
+  const info = h('span', 'x-info')
+  const goBtn = h('button', 'x-go', 'exportar')
+  goBtn.id = 'x-go'
+
+  const group = (title, key, opts) => {
+    const fs = h('fieldset', 'x-group')
+    fs.dataset.key = key
+    fs.append(h('legend', '', title))
+    for (const o of opts) {
+      const lab = h('label', 'x-opt')
+      const inp = h('input')
+      inp.type = 'radio'; inp.name = 'x-' + key; inp.value = o.id; inp.checked = st[key] === o.id
+      inp.onchange = () => { st[key] = o.id; draw() }
+      const txt = h('span', 'x-l', o.label)
+      if (o.hint) txt.append(h('small', '', o.hint))
+      lab.append(inp, txt)
+      fs.append(lab)
+    }
+    side.append(fs)
+  }
+  group('Ordem', 'src', sources)
+  group('Modelo', 'model', MODELS)
+  group('Formato', 'format', FORMATS)
+
+  const current = () => {
+    const input = exportInput(sources.find((x) => x.id === st.src))
+    return { input, doc: buildDoc({ ...input, model: st.model }) }
+  }
+  const LIMIT = 14
+  function draw() {
+    const { input, doc: d } = current()
+    const n = countCards(input.pieces)
+    page.innerHTML = toHTML(d, { limit: LIMIT }) // texto sempre escapado em toHTML
+    if (d.blocks.length > LIMIT) page.append(h('p', 'x-more', '… o documento continua'))
+    if (!n) page.append(h('p', 'x-more', 'Não há cartões escritos nesta ordem.'))
+    info.textContent = `${n} ${n === 1 ? 'cartão' : 'cartões'}` +
+      (input.aside ? ` · ${input.aside} de lado ${input.aside === 1 ? 'fica' : 'ficam'} de fora` : '')
+    goBtn.disabled = !n
+    lsSet(UI_EXPORT, JSON.stringify({ model: st.model, format: st.format }))
+  }
+
+  goBtn.onclick = async () => {
+    const { doc: d } = current()
+    const f = FORMATS.find((x) => x.id === st.format)
+    const name = fileName(d.title, f.ext)
+    let bytes
+    try { bytes = renderFile(d, f.id) } catch (err) {
+      console.error('cartoes: exportação falhou', err)
+      say('Não consegui montar o arquivo. Nada foi gravado.')
+      return
+    }
+    goBtn.disabled = true
+    const r = await saveFile(name, bytes, f)
+    goBtn.disabled = false
+    if (r?.canceled) return // desistiu no diálogo: a janela continua como estava
+    if (!r?.ok) { say('Não consegui gravar o arquivo. Ele está aberto em outro programa?'); return }
+    closeSheet()
+    if (r.path) sayAct(`Exportado: ${r.path.split(/[\\/]/).pop()}`, 'mostrar na pasta', () => disk.reveal?.())
+    else say(`Exportado: ${name} (na pasta de downloads)`)
+  }
+
+  const main = h('div', 'x-main')
+  main.append(h('div', 'x-cap', 'pré-visualização'), page)
+  const foot = h('div', 'x-foot')
+  foot.append(info, goBtn)
+  form.append(side, main)
+  body.append(form, foot)
+  draw()
+}
 
 /* ---------- lixeira ---------- */
 function openTrash() {
@@ -1800,6 +1929,7 @@ const KEYS = [
     ['E', 'organizar: testar ordens de leitura'],
     ['T', 'devolver o último cartão excluído'],
     ['Encostar um cartão em outro', 'agrupar (Shift + arrastar solta do grupo)'],
+    ['Ctrl+E', 'exportar como documento'],
     ['Ctrl+S', 'fazer backup (.json)'],
     ['Ctrl+O', 'importar backup'],
     ['?', 'esta lista'],

@@ -8,7 +8,8 @@ Programa desktop para escritores: editor de texto com organização integrada, i
 
 App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), lixeira, exportar/importar e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 27 testes automatizados (`npm test`). Plano em andamento: `PLANO_FASES_5_A_8.md`. Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador. Histórico da revisão e do plano de salvamento: `REVISAO_E_PLANO_SALVAMENTO.md`.
 
-- `src/main.js`: lógica (ProseMirror, quadro, arrasto, persistência, demo)
+- `src/main.js`: lógica (ProseMirror, quadro, arrasto, persistência, organizador, menu, janela de exportar, demo)
+- `src/export.mjs`: exportação pura (modelos e formatos), sem DOM
 - `src/style.css`: todo o visual
 - `src/template.html`: casca HTML com marcadores `/*__CSS__*/` e `/*__JS__*/`
 - `build.mjs`: empacota tudo em `index.html` (esbuild, um arquivo, funciona offline)
@@ -55,10 +56,13 @@ Abrir `index.html#demo` carrega cartões de exemplo (inclui um com estouro de te
   - Rodar: `npm start` (rebuilda e abre o Electron).
   - **Pontinho de salvo** (`#save-dot`, canto superior direito, Fase 6): `data-state` = `saved` (cinza), `dirty` (mudança ainda não gravada), `saving` (um pulso por gravação), `failed` (vermelho), `ro` (somente leitura). Texto só no hover (`data-tip`): "salvo às 14:32 · em disco" / "· neste navegador" / "· demonstração". Só diz "salvo" depois que o destino principal confirmou. `setDot()` em `src/main.js`.
   - `Ctrl+S` (na mesa) faz o backup `.json` com cartões, lixeira e ordens; `Ctrl+O` importa (só acrescenta; ordens nomeadas entram como "(importada)", com os ids novos). Console: `cartoes.snapshots()`, `cartoes.restore(t)`, `cartoes.trash()`, `cartoes.ordens()`.
-- **Menu ≡ (Fase 6)**: `#menu-btn` no canto (pontinho, organizar, ≡). Itens em `MENU` (`src/main.js`), cada um com o atalho ao lado: Importar backup…, Fazer backup (.json), Lixeira, Instantâneos, Atalhos. As janelas usam `#sheet` (`openSheet(título)` devolve o corpo; `closeSheet()`). Com menu ou janela abertos, os atalhos da mesa não valem (o `keydown` global devolve cedo para `menuKey`/`sheetKey`).
+- **Menu ≡ (Fase 6)**: `#menu-btn` no canto (pontinho, organizar, ≡). Itens em `MENU` (`src/main.js`), cada um com o atalho ao lado: Exportar…, Importar backup…, Fazer backup (.json), Lixeira, Instantâneos, Atalhos. As janelas usam `#sheet` (`openSheet(título)` devolve o corpo; `closeSheet()`). Com menu ou janela abertos, os atalhos da mesa não valem (o `keydown` global devolve cedo para `menuKey`/`sheetKey`).
   - Lixeira: lista e devolve ao mesmo lugar. Instantâneos: restaurar com confirmação na linha (`restoreSnapshot(t)`); o estado atual vira instantâneo antes, e no app desktop o registro restaurado é gravado também no `projeto.json`.
   - No Electron a janela só pode recarregar a si mesma (`will-navigate`); é o que conclui a restauração.
-- Atalhos: `?` lista os atalhos; `E` abre o organizador; duplo clique no fundo ou `N` cria cartão; `Ctrl/⌘+Enter` cria o próximo ao lado; `Esc` tira o foco; `Backspace` em cartão vazio o apaga. (`Ctrl+N` é reservado pelo navegador; resolver no app desktop.)
+- **Exportação (Fase 6)**: `src/export.mjs` é puro (sem DOM), testado direto no Node. Caminho único: peças → `buildDoc({ title, model, pieces, orderNote })` → `{ title, blocks }` (blocos `title`/`lead`/`h`/`p`/`sep`/`note`; `p` tem `runs: [{ text, b, i }]`) → `render(doc, formato)` devolve os bytes. Formato novo = entrada em `FORMATS` + um ramo em `render`.
+  - Janela "Exportar" (`openExport()` em `main.js`, menu ≡ ou `Ctrl+E`): ordem (salvas, em teste, "a mesa como está"), modelo (`corrido` / `secoes` / `fichas`), formato, pré-visualização. Postos de lado não saem; exportar nunca altera mesa nem ordens.
+  - Salvar: no desktop, `cartoesDisk.exportFile({ name, data, label })` → IPC `export:save` → "Salvar como" do sistema (só extensões de `EXPORT_EXT`; grava só no caminho escolhido no diálogo). No navegador, download.
+- Atalhos: `?` lista os atalhos; `Ctrl+E` exporta; `E` abre o organizador; duplo clique no fundo ou `N` cria cartão; `Ctrl/⌘+Enter` cria o próximo ao lado; `Esc` tira o foco; `Backspace` em cartão vazio o apaga. (`Ctrl+N` é reservado pelo navegador; resolver no app desktop.)
 - Interface em português (pt-BR).
 
 ## Próximos passos
@@ -99,8 +103,9 @@ npm run test:electron # app desktop; isolado por CARTOES_DATA_DIR (arquivo e per
 ```
 
 - `tests/browser.test.cjs`: salvar, demo isolado, JSON ilegível, quarentena, aviso de falha, IndexedDB x espelho, aba única, teto de espera, lixeira, exportar/importar, instantâneos.
-- `tests/electron.test.cjs`: ponte sem Node e sem navegar para fora, pontinho "em disco", restaurar instantâneo no arquivo, gravação ao fechar, disco como fonte, `.bak`/instantâneos/recuperação, instância única, ordens no `projeto.json`.
+- `tests/electron.test.cjs`: ponte sem Node e sem navegar para fora, pontinho "em disco", restaurar instantâneo no arquivo, exportar pelo "Salvar como" (diálogo respondido pelo teste via `app.evaluate`), gravação ao fechar, disco como fonte, `.bak`/instantâneos/recuperação, instância única, ordens no `projeto.json`.
 - `tests/menu.test.cjs` (Fase 6): pontinho de salvo (estados, hover, falha, somente leitura, demo), menu ≡ (itens, teclado, backup, importar), lixeira, instantâneos, atalhos.
+- `tests/export.test.cjs` (Fase 6): `export.mjs` no Node (modelos e cada formato) e a janela "Exportar" no navegador (arquivo baixado conferido).
 - `tests/organizer.test.cjs`: ordem de leitura da mesa, mover (teclado e arrasto), pôr de lado, notas, salvar com nome, bandeja, separar grupo, embaralhar (I6), dispor na mesa + desfazer, Ctrl+Z, lixeira devolve ao lugar, exportar/importar ordens, demo isolado.
 - Depois de `goto`, espere `.ProseMirror-focused` antes de digitar: a inicialização é assíncrona e teclas antes disso caem nos atalhos globais.
 - Nunca rode testes sem `CARTOES_DATA_DIR` no Electron: sem isso eles gravam no perfil real do usuário.
