@@ -83,6 +83,7 @@ function save() {
   if (!ready || readOnly) return
   const now = Date.now()
   if (!firstDirty) firstDirty = now
+  if (dot.dataset.state === 'saved') setDot('dirty')
   clearTimeout(saveTimer)
   // enquanto o usuário digita sem parar, ainda assim grava a cada MAX_WAIT
   saveTimer = setTimeout(flush, Math.max(0, Math.min(DEBOUNCE, firstDirty + MAX_WAIT - now)))
@@ -170,7 +171,34 @@ let trash = []
 const ORG_KEY = DEMO_MODE ? 'cartoes.demo.org' : 'cartoes.org'
 let org = { orders: [], cur: null }
 
+/* Pontinho de salvo: cinza = salvo, pulsa ao gravar, vermelho se falhar.
+ * O texto ("salvo às 14:32 · em disco") só aparece no hover. */
+const dot = document.getElementById('save-dot')
+const WHERE = DEMO_MODE ? 'demonstração' : disk ? 'em disco' : 'neste navegador'
+const hhmm = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+let dotAt = 0 // hora da última gravação confirmada
+function setDot(state, at) {
+  if (at) dotAt = at
+  const tip = {
+    saved: (dotAt ? `salvo às ${hhmm(dotAt)}` : 'tudo salvo') + ' · ' + WHERE,
+    dirty: 'gravando as últimas mudanças…',
+    saving: 'gravando…',
+    failed: 'não consegui salvar · não feche esta janela',
+    ro: 'somente leitura · aberto em outra aba',
+  }[state]
+  dot.dataset.state = state
+  dot.dataset.tip = tip
+  dot.setAttribute('aria-label', tip)
+}
+function pulseDot() {
+  dot.classList.remove('pulse')
+  void dot.offsetWidth // reinicia a animação
+  dot.classList.add('pulse')
+}
+setDot('saved')
+
 let saveFailed = false
+let flushN = 0
 function report(ok) {
   if (ok) {
     if (saveFailed) { saveFailed = false; toast.classList.remove('show') }
@@ -188,6 +216,9 @@ function flush(final = false) {
   firstDirty = 0
   if (!ready || readOnly) return false
   const t = Date.now()
+  const turn = ++flushN
+  if (dot.dataset.state !== 'failed') setDot('saving')
+  pulseDot()
   const list = [...cards.values()].map(snapshotOf)
   const rec = { savedAt: t, cards: list, trash, org }
   // espelho síncrono primeiro: é o que resiste a um fechamento no meio do caminho
@@ -206,6 +237,9 @@ function flush(final = false) {
     const ok = disk ? diskOk : (lsOk || idbOk)
     if (!ok) console.error('cartoes: falha ao salvar')
     report(ok)
+    // uma gravação antiga que termina depois não desmente a mais nova; mudanças ainda por gravar continuam "dirty"
+    if (!ok) setDot('failed')
+    else if (turn === flushN) setDot(firstDirty ? 'dirty' : 'saved', t)
   })
   return lsOk
 }
@@ -1684,6 +1718,7 @@ async function start() {
   } else if (!readOnly) newCardAt(...freeSpot()) // primeira visita: um cartão em branco, cursor piscando
   ready = true
   if (readOnly) {
+    setDot('ro')
     clearTimeout(toastTimer)
     toast.textContent = WARN_RO
     toast.classList.add('show')

@@ -62,6 +62,17 @@ test('a página só enxerga a ponte do disco, sem Node', async () => {
   assert.equal(await win.evaluate(() => typeof window.process), 'undefined')
 })
 
+test('o pontinho de salvo diz "em disco" depois que o arquivo foi gravado', async () => {
+  const { win } = await launch()
+  await win.keyboard.type('no arquivo')
+  const tip = await eventually(() => win.evaluate(() => {
+    const d = document.getElementById('save-dot')
+    return d.dataset.state === 'saved' && /às/.test(d.dataset.tip) && d.dataset.tip
+  }))
+  assert.match(tip, /^salvo às \d\d:\d\d · em disco$/)
+  assert.ok(JSON.stringify(readFile()).includes('no arquivo')) // só diz "salvo" com o arquivo já gravado
+})
+
 test('fechar a janela logo após digitar grava o texto, sem .tmp sobrando', async () => {
   const { app, win } = await launch()
   await win.keyboard.type('primeiro texto')
