@@ -6,7 +6,7 @@ Programa desktop para escritores: editor de texto com organização integrada, i
 
 ## Estado atual
 
-App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), menu ≡ com lixeira, instantâneos e atalhos, pontinho de salvo, exportação em docx/odt/pdf/txt/md (Fase 6), backup/importação `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 49 testes automatizados (`npm test`). Diário da Fase 6: `FASE_6_DIARIO.md`. Plano em andamento: `PLANO_FASES_5_A_8.md`. Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador. Histórico da revisão e do plano de salvamento: `REVISAO_E_PLANO_SALVAMENTO.md`.
+App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), menu ≡ com lixeira, instantâneos e atalhos, pontinho de salvo, exportação em docx/odt/pdf/txt/md (Fase 6), backup/importação `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 49 testes automatizados (`npm test`). Diário da Fase 6: `FASE_6_DIARIO.md`. Última passagem de contexto: `HANDOFF_2026-11-11.md`. Plano em andamento: `PLANO_FASES_5_A_8.md`. Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador. Histórico da revisão e do plano de salvamento: `REVISAO_E_PLANO_SALVAMENTO.md`.
 
 - `src/main.js`: lógica (ProseMirror, quadro, arrasto, persistência, organizador, menu, janela de exportar, demo)
 - `src/export.mjs`: exportação pura (modelos e formatos), sem DOM; `src/zip.mjs`: ZIP mínimo para `.docx`/`.odt`
