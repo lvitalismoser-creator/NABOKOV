@@ -372,3 +372,106 @@ test('dispor na mesa com tamanhos mistos não sobrepõe cartões', async () => {
   }
   await ctx.close()
 })
+
+/* ---------------- Fase 7b: seleção múltipla ---------------- */
+const TRES = [card('a', 100, 120, 'alfa'), card('b', 520, 120, 'beta'), card('c', 100, 480, 'gama')]
+const selected = (page) => page.$$eval('.card.selected .ProseMirror', (els) => els.map((e) => e.innerText.trim()).sort())
+async function boxSelect(page, x0, y0, x1, y1, { ctrl = false } = {}) {
+  await page.mouse.move(x0, y0)
+  await page.keyboard.down('Shift'); if (ctrl) await page.keyboard.down('Control')
+  await page.mouse.down(); await page.mouse.move(x1, y1, { steps: 8 }); await page.mouse.up()
+  if (ctrl) await page.keyboard.up('Control'); await page.keyboard.up('Shift')
+}
+
+test('seleção: Shift + arrastar no fundo desenha a caixa; arrastar um selecionado move todos; Ctrl+Z devolve', async () => {
+  const { ctx, page, errors } = await open(TRES)
+  await boxSelect(page, 60, 80, 900, 300)          // pega alfa e beta; gama fica fora
+  assert.deepEqual(await selected(page), ['alfa', 'beta'])
+  assert.equal(await page.textContent('#sel-n'), '2 cartões selecionados')
+  assert.deepEqual(await camOf(page), { x: 0, y: 0, z: 1 }) // com Shift o fundo não desloca a mesa
+  await drag(page, 'beta', 70, 150)
+  let s = await saved(page)
+  assert.deepEqual([s.a.x, s.a.y, s.b.x, s.b.y], [170, 270, 590, 270])
+  assert.deepEqual([s.c.x, s.c.y], [100, 480])
+  assert.equal(s.a.g, null); assert.equal(s.b.g, null) // mover em lote não agrupa ninguém
+  assert.deepEqual(await selected(page), ['alfa', 'beta'])
+  await page.keyboard.press('Control+z')
+  s = await saved(page)
+  assert.deepEqual([s.a.x, s.a.y, s.b.x, s.b.y], [100, 120, 520, 120])
+  await page.mouse.click(1100, 700)                // clique no fundo solta a seleção
+  assert.deepEqual(await selected(page), [])
+  assert.equal(await page.locator('#selbar').isVisible(), false)
+  assert.equal(await page.locator('.card').count(), 3)
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
+
+test('seleção: Shift/Ctrl + clique põe e tira; não solta do grupo; o grupo do selecionado anda junto', async () => {
+  const G = [card('a', 100, 120, 'alfa', { g: 'g1' }), card('b', 100 + W + GAP, 120, 'beta', { g: 'g1' }), card('c', 100, 480, 'gama'), card('d', 600, 480, 'delta')]
+  const { ctx, page, errors } = await open(G)
+  const top = async (text) => { const b = await box(page, text); return [b.x + b.width / 2, b.y + 14] }
+  await page.keyboard.down('Shift'); await page.mouse.click(...await top('alfa')); await page.keyboard.up('Shift')
+  assert.deepEqual(await selected(page), ['alfa'])
+  let s = await saved(page)
+  assert.equal(s.a.g, 'g1'); assert.equal(s.b.g, 'g1') // um Shift + clique não desfaz o grupo
+  // Ctrl + clique no texto de outro cartão: entra na seleção sem pôr o cursor nele
+  const cb = await box(page, 'gama')
+  await page.keyboard.down('Control'); await page.mouse.click(cb.x + 60, cb.y + 60); await page.keyboard.up('Control')
+  assert.deepEqual(await selected(page), ['alfa', 'gama'])
+  assert.equal(await page.locator('.ProseMirror-focused').count(), 0)
+  await page.keyboard.down('Control'); await page.mouse.click(...await top('gama')); await page.keyboard.up('Control')
+  await page.keyboard.down('Control'); await page.mouse.click(...await top('delta')); await page.keyboard.up('Control')
+  assert.deepEqual(await selected(page), ['alfa', 'delta'])
+  await drag(page, 'delta', 40, 60)                // alfa é de um grupo: beta vai junto
+  s = await saved(page)
+  assert.deepEqual([s.a.x, s.a.y, s.b.x, s.b.y, s.d.x, s.d.y], [140, 180, 140 + W + GAP, 180, 640, 540])
+  assert.deepEqual([s.c.x, s.c.y], [100, 480])
+  await page.keyboard.press('Escape')
+  assert.deepEqual(await selected(page), [])
+  // com o cursor num cartão, Shift + clique no texto continua sendo seleção de texto
+  await page.locator('.card', { hasText: 'gama' }).locator('.ProseMirror').click()
+  await page.keyboard.press('Home')
+  const gb = await box(page, 'gama')
+  await page.keyboard.down('Shift'); await page.mouse.click(gb.x + 200, gb.y + 50); await page.keyboard.up('Shift')
+  assert.deepEqual(await selected(page), [])
+  assert.equal(await page.evaluate(() => getSelection().toString()), 'gama')
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
+
+test('seleção: excluir, guardar e tamanho em lote, cada um com desfazer', async () => {
+  const { ctx, page, errors } = await open(TRES)
+  await boxSelect(page, 60, 80, 900, 300)
+  await page.keyboard.press('Delete'); await sleep(350)
+  assert.deepEqual(await texts(page), ['gama'])
+  assert.match(await page.textContent('#toast'), /2 cartões excluídos · estão na lixeira/)
+  assert.equal(JSON.parse((await saved(page), await ls(page, 'cartoes.trash'))).length, 2)
+  await page.click('#toast button'); await sleep(350) // desfazer pelo aviso
+  let s = await saved(page)
+  assert.deepEqual((await texts(page)).sort(), ['alfa', 'beta', 'gama'])
+  assert.deepEqual([s.a.x, s.a.y, s.b.x, s.b.y], [100, 120, 520, 120])
+  assert.deepEqual(await selected(page), ['alfa', 'beta']) // voltam selecionados
+  await page.keyboard.press('Control+z')            // o mesmo desfazer não roda duas vezes
+  assert.equal(await page.locator('.card:not(.leaving)').count(), 3)
+  // tamanho em lote pela barra
+  await page.click('#selbar .sel-sizes button[data-s="p"]')
+  s = await saved(page)
+  assert.deepEqual([s.a.s, s.b.s, s.c.s ?? null], ['p', 'p', null])
+  // guardar em lote
+  await page.click('#sel-stash'); await sleep(350)
+  assert.deepEqual(await texts(page), ['gama'])
+  assert.equal(await page.locator('#dock .chip').count(), 2)
+  assert.match(await page.textContent('#toast'), /2 cartões guardados · estão na gaveta/)
+  await page.mouse.click(1100, 300)
+  await page.keyboard.press('Control+z'); await sleep(350) // desfazer pelo teclado
+  assert.deepEqual((await texts(page)).sort(), ['alfa', 'beta', 'gama'])
+  assert.equal(await page.locator('#dock .chip').count(), 0)
+  // excluir pela barra e desfazer com Ctrl+Z
+  await page.click('#sel-del'); await sleep(350)
+  assert.deepEqual(await texts(page), ['gama'])
+  await page.keyboard.press('Control+z'); await sleep(350)
+  assert.deepEqual((await texts(page)).sort(), ['alfa', 'beta', 'gama'])
+  assert.equal(await ls(page, 'cartoes.trash').then(() => saved(page)).then(() => ls(page, 'cartoes.trash')), '[]')
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})

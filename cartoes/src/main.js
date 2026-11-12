@@ -150,7 +150,8 @@ function reveal(list, opts = { glide: true }) {
 /* Arrastar o fundo (ou o botão do meio em qualquer lugar) move a mesa. */
 board.addEventListener('pointerdown', (e) => {
   const bg = e.target === board || e.target === world
-  if (!((e.button === 0 && bg && !e.shiftKey) || e.button === 1)) return
+  if (e.button === 0 && bg && e.shiftKey) { startBox(e); return }
+  if (!((e.button === 0 && bg) || e.button === 1)) return
   if (e.button === 1) e.preventDefault()
   const sx = e.clientX, sy = e.clientY, x0 = cam.x, y0 = cam.y
   let moved = false
@@ -166,6 +167,7 @@ board.addEventListener('pointerdown', (e) => {
     board.removeEventListener('pointerup', up)
     board.removeEventListener('pointercancel', up)
     document.body.classList.remove('panning')
+    if (!moved && e.button === 0) clearSel() // clique no fundo solta a seleção
   }
   board.addEventListener('pointermove', move)
   board.addEventListener('pointerup', up)
@@ -552,13 +554,16 @@ function setSize(list, size) {
 
 /* Desfazer da mesa (Ctrl+Z sem cursor num cartão): mover, tamanho e ações em lote. */
 const mesaPast = []
+// a mesma ação pode ser desfeita pelo aviso ou pelo Ctrl+Z: só vale uma vez
+const once = (fn) => { let done = false; const f = () => { if (!done) { done = true; fn() } }; f.spent = () => done; return f }
 function rememberMesa(what, fn) {
   mesaPast.push({ what, fn })
   if (mesaPast.length > 40) mesaPast.shift()
 }
 function undoMesa() {
   if (blocked()) return
-  const u = mesaPast.pop()
+  let u = mesaPast.pop()
+  while (u && u.fn.spent?.()) u = mesaPast.pop() // já desfeita pelo aviso
   if (!u) { say('Nada para desfazer na mesa'); return }
   u.fn()
   say('Desfeito: ' + u.what)
@@ -569,7 +574,8 @@ function measure(c) {
   const s = c.scroll
   const content = c.view.dom.offsetHeight
   const ratio = content / s.clientHeight
-  const depth = ratio <= 1.001 ? 0 : ratio < 1.7 ? 1 : ratio < 3 ? 2 : 3
+  // 2 px de folga: um cartão cheio até a última linha ainda não tem "mais texto do que mostra"
+  const depth = content <= s.clientHeight + 2 ? 0 : ratio < 1.7 ? 1 : ratio < 3 ? 2 : 3
   c.el.dataset.depth = depth
   c.el.classList.toggle('more-below', s.scrollTop + s.clientHeight < s.scrollHeight - 2)
   c.el.classList.toggle('more-above', s.scrollTop > 2)
@@ -693,13 +699,12 @@ function blocked() {
 
 function startDrag(c, e, host) {
   if (blocked()) return
-  if (e.shiftKey && c.g) { c.g = null; cleanGroups(); renderGroups() }
-  bringUnitToFront(unitOf(c))
-  const list = unitOf(c)
-  const start = list.map((k) => [k, k.x, k.y, k.g])
-  const r0 = rectOf(list)
+  const mod = e.shiftKey || e.ctrlKey || e.metaKey
+  // um clique simples num cartão de fora desfaz a seleção
+  if (!mod && !sel.has(c)) clearSel()
+  bringUnitToFront(sel.has(c) && sel.size > 1 ? selUnits() : unitOf(c))
   const sx = e.clientX, sy = e.clientY
-  let moved = false, snap = null, lit = []
+  let moved = false, snap = null, lit = [], list = [], start = [], r0 = null, multi = false
   host.setPointerCapture(e.pointerId)
 
   const light = (o) => {
@@ -707,14 +712,28 @@ function startDrag(c, e, host) {
     lit = o ? unitOf(o) : []
     lit.forEach((k) => k.el.classList.add('magnet'))
   }
+  // o conjunto arrastado só é decidido quando o arrasto começa de fato (um clique não solta ninguém do grupo)
+  const begin = () => {
+    multi = sel.has(c) && sel.size > 1
+    const group = c.g ? unitOf(c).map((k) => [k, k.x, k.y, k.g]) : []
+    // Shift + arrastar solta o cartão do grupo
+    if (e.shiftKey && c.g && !multi) { c.g = null; cleanGroups(); renderGroups() }
+    list = multi ? selUnits() : unitOf(c)
+    start = list.map((k) => [k, k.x, k.y, k.g])
+    for (const row of group) if (!list.includes(row[0])) start.push(row) // para o desfazer devolver o grupo
+    r0 = rectOf(list)
+    list.forEach((k) => { k.dragging = true; k.el.classList.add('dragging') })
+  }
   const move = (ev) => {
     if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return
-    if (!moved) { moved = true; list.forEach((k) => { k.dragging = true; k.el.classList.add('dragging') }) }
+    if (!moved) { moved = true; begin() }
     // a mesa é infinita: sem cercas; o deslocamento da tela vira deslocamento do mundo
     let dx = (ev.clientX - sx) / cam.z, dy = (ev.clientY - sy) / cam.z
-    snap = magnet(list, r0, dx, dy)
+    // vários cartões soltos andando juntos não grudam em ninguém
+    snap = multi ? null : magnet(list, r0, dx, dy)
     if (snap) { dx += snap.sx; dy += snap.sy }
     start.forEach(([k, x, y]) => {
+      if (!list.includes(k)) return
       k.x = x + dx; k.y = y + dy; place(k)
       k.el.classList.toggle('snapped', !!snap)
     })
@@ -731,6 +750,7 @@ function startDrag(c, e, host) {
     if (moved && snap) {
       const target = unitOf(snap.o)
       const gid = target.find((k) => k.g)?.g || list.find((k) => k.g)?.g || uid()
+      for (const k of target) if (!start.some((row) => row[0] === k)) start.push([k, k.x, k.y, k.g])
       ;[...list, ...target].forEach((k) => { k.g = gid })
       renderGroups()
       const f = frames.get(gid)
@@ -742,11 +762,113 @@ function startDrag(c, e, host) {
         start.forEach(([k, x, y, g]) => { if (cards.has(k.id)) { k.x = x; k.y = y; k.g = g; place(k) } })
         cleanGroups(); renderGroups(); save()
       })
-    } else if (host === c.el) c.view.focus()
+    } else if (host === c.el) {
+      // clique sem arrastar: com Shift/Ctrl entra ou sai da seleção; sem, põe o cursor no cartão
+      if (mod) toggleSel(c)
+      else { clearSel(); c.view.focus() }
+    }
   }
   host.addEventListener('pointermove', move)
   host.addEventListener('pointerup', up)
   host.addEventListener('pointercancel', up)
+}
+
+/* ------------------------------------------------------------------ *
+ *  Seleção múltipla: Shift + arrastar no fundo desenha uma caixa;
+ *  Shift/Ctrl + clique põe ou tira um cartão. Arrastar um selecionado
+ *  move todos; a barra oferece guardar, excluir e tamanho em lote.
+ * ------------------------------------------------------------------ */
+const sel = new Set()
+const selBar = document.getElementById('selbar')
+const selBox = document.getElementById('selbox')
+
+function paintSel() {
+  for (const c of [...sel]) if (!cards.has(c.id) || c.stashed) sel.delete(c)
+  cards.forEach((c) => c.el.classList.toggle('selected', sel.has(c)))
+  selBar.hidden = sel.size === 0
+  document.body.classList.toggle('selecting', sel.size > 0)
+  if (sel.size) document.getElementById('sel-n').textContent = sel.size === 1 ? '1 cartão selecionado' : `${sel.size} cartões selecionados`
+}
+function setSel(list) { sel.clear(); list.forEach((c) => sel.add(c)); paintSel() }
+function clearSel() { if (sel.size) setSel([]) }
+function toggleSel(c) {
+  if (sel.has(c)) sel.delete(c); else sel.add(c)
+  document.activeElement?.blur?.()
+  paintSel()
+}
+/* Os selecionados mais os colegas de grupo de cada um: é o que anda junto. */
+function selUnits() {
+  const out = new Set()
+  for (const c of sel) for (const k of unitOf(c)) out.add(k)
+  return [...out]
+}
+// no texto, Ctrl + clique (ou Shift + clique num cartão que não é o do cursor) seleciona o cartão
+const selClick = (e, c) => e.ctrlKey || e.metaKey || (e.shiftKey && current !== c)
+
+function startBox(e) {
+  const sx = e.clientX, sy = e.clientY
+  const base = e.ctrlKey || e.metaKey ? [...sel] : []
+  let moved = false
+  board.setPointerCapture(e.pointerId)
+  document.activeElement?.blur?.()
+  const move = (ev) => {
+    if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return
+    moved = true
+    const x0 = Math.min(sx, ev.clientX), y0 = Math.min(sy, ev.clientY), x1 = Math.max(sx, ev.clientX), y1 = Math.max(sy, ev.clientY)
+    selBox.hidden = false
+    selBox.style.transform = `translate(${x0}px, ${y0}px)`
+    selBox.style.width = x1 - x0 + 'px'; selBox.style.height = y1 - y0 + 'px'
+    const [wx0, wy0] = toWorld(x0, y0), [wx1, wy1] = toWorld(x1, y1)
+    const hit = live().filter((k) => k.x < wx1 && k.x + wOf(k) > wx0 && k.y < wy1 && k.y + hOf(k) > wy0)
+    setSel([...new Set([...base, ...hit])])
+  }
+  const up = () => {
+    board.removeEventListener('pointermove', move)
+    board.removeEventListener('pointerup', up)
+    board.removeEventListener('pointercancel', up)
+    selBox.hidden = true
+  }
+  board.addEventListener('pointermove', move)
+  board.addEventListener('pointerup', up)
+  board.addEventListener('pointercancel', up)
+}
+
+selBar.addEventListener('click', (e) => {
+  const b = e.target.closest('button')
+  if (!b) return
+  if (b.dataset.s) setSize([...sel], b.dataset.s)
+  else if (b.id === 'sel-stash') stashSel()
+  else if (b.id === 'sel-del') deleteSel()
+  else if (b.id === 'sel-clear') clearSel()
+})
+
+/* ---------- ações em lote (todas com desfazer: no aviso e no Ctrl+Z da mesa) ---------- */
+const nOf = (n, one, many) => (n === 1 ? `1 ${one}` : `${n} ${many}`)
+
+function deleteSel() {
+  if (!sel.size || blocked()) return
+  const list = [...sel]
+  const ids = list.filter((c) => !isEmpty(c.view.state)).map((c) => c.id)
+  list.forEach((c) => removeCard(c, { undoable: !isEmpty(c.view.state), quiet: true }))
+  clearSel()
+  if (!ids.length) return
+  const undo = once(() => {
+    const back = ids.map((id) => reviveFromTrash(id, { focus: false })).filter(Boolean)
+    if (back.length) { setSel(back); reveal(back) }
+  })
+  rememberMesa('excluir', undo)
+  sayUndo(`${nOf(ids.length, 'cartão excluído · está', 'cartões excluídos · estão')} na lixeira`, undo)
+}
+
+function stashSel() {
+  if (!sel.size || blocked()) return
+  const list = [...sel].filter((c) => !isEmpty(c.view.state))
+  if (!list.length) { say('Escreva algo antes de guardar'); return }
+  clearSel()
+  stashUnit(list, { quiet: true })
+  const undo = once(() => { const back = list.filter((c) => cards.has(c.id) && c.stashed); if (back.length) { restoreUnit(back); setSel(back) } })
+  rememberMesa('guardar', undo)
+  sayUndo(`${nOf(list.length, 'cartão guardado · está', 'cartões guardados · estão')} na gaveta`, undo)
 }
 
 function wire(c) {
@@ -756,6 +878,7 @@ function wire(c) {
 
   // clicar no vazio do cartão leva o cursor ao fim
   scroll.addEventListener('mousedown', (e) => {
+    if (selClick(e, c)) return
     if (e.target === scroll || e.target.classList.contains('mount')) {
       e.preventDefault()
       c.view.focus()
@@ -764,13 +887,18 @@ function wire(c) {
   })
 
   // arrastar pela moldura (faixa de cima e margens), nunca pelo texto
-  const ctl = '.scroll, .close, .stash, .cats, .sizes'
   el.addEventListener('mousedown', (e) => {
+    // clique de seleção no texto: o editor nem fica sabendo (não move o cursor nem tira o foco de onde está)
+    if (e.target.closest('.scroll') && selClick(e, c)) { e.preventDefault(); e.stopPropagation(); return }
     // só o texto recebe foco: a moldura e os botões do cartão não tiram o cursor de onde está
     if (!e.target.closest('.scroll')) e.preventDefault()
-  })
+  }, true)
   el.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || e.target.closest(ctl)) return
+    if (e.button !== 0 || e.target.closest('.close, .stash, .cats, .sizes')) return
+    if (e.target.closest('.scroll')) {
+      if (selClick(e, c)) { if (!blocked()) toggleSel(c) } else clearSel()
+      return
+    }
     startDrag(c, e, el)
   })
 
@@ -805,7 +933,7 @@ function wire(c) {
   })
 }
 
-function removeCard(c, { undoable }) {
+function removeCard(c, { undoable, quiet = false }) {
   if (!cards.has(c.id) || blocked()) return
   const snapshot = snapshotOf(c)
   cards.delete(c.id)
@@ -820,19 +948,20 @@ function removeCard(c, { undoable }) {
     if (trash.length > TRASH_MAX) trash.splice(0, trash.length - TRASH_MAX)
   }
   save()
-  if (undoable) showUndo(snapshot)
+  paintSel()
+  if (undoable && !quiet) showUndo(snapshot)
 }
 
 /* Devolve da lixeira o cartão com este id (o mais recente, se omitido). */
-function reviveFromTrash(id) {
+function reviveFromTrash(id, { focus = true } = {}) {
   const i = id ? trash.findIndex((d) => d.id === id) : trash.length - 1
   if (i < 0) return null
   const [d] = trash.splice(i, 1)
   const data = { ...d }
   if (cards.has(data.id)) data.id = undefined
-  const c = createCard(data, { animate: true, focus: true })
+  const c = createCard(data, { animate: true, focus })
   cleanGroups(); renderGroups(); syncEmpty(); save()
-  reveal([c])
+  if (focus) reveal([c])
   return c
 }
 
@@ -883,7 +1012,7 @@ function firstWords(c, n) {
   return w.slice(0, n).join(' ') + (w.length > n ? '…' : '')
 }
 
-function stashUnit(list) {
+function stashUnit(list, { quiet = false } = {}) {
   if (blocked()) return
   if (list.some((k) => isEmpty(k.view.state))) { say('Escreva algo antes de guardar'); return }
   const t = Date.now()
@@ -894,7 +1023,7 @@ function stashUnit(list) {
     setTimeout(() => { k.el.classList.remove('stashing'); k.el.classList.add('stashed') }, 180)
   })
   if (list.includes(current)) { current = null; document.body.classList.remove('editing') }
-  cleanGroups(); syncEmpty(); renderGroups(); renderDock(); save()
+  cleanGroups(); syncEmpty(); renderGroups(); renderDock(); paintSel(); save()
 }
 
 function restoreUnit(list) {
@@ -1663,6 +1792,7 @@ function chipDrag(e, chip, src) {
 
 /* ---------- abrir e fechar ---------- */
 function openOrg() {
+  clearSel()
   let o = curOrder()
   if (!o) {
     const units = mesaUnits()
@@ -1755,6 +1885,12 @@ addEventListener('keydown', (e) => {
   }
   const typing = e.target.closest?.('.ProseMirror, input, textarea, select')
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undoMesa(); return }
+  if (sel.size && !typing && !e.ctrlKey && !e.metaKey) {
+    const size = e.altKey && { 1: 'p', 2: 'm', 3: 'g' }[e.key]
+    if (size) { e.preventDefault(); setSize([...sel], size); return }
+    if (!e.altKey && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); deleteSel(); return }
+    if (!e.altKey && e.key === 'Escape') { e.preventDefault(); clearSel(); return }
+  }
   if (e.ctrlKey || e.metaKey || e.altKey || typing) return
   const k = e.key.toLowerCase()
   if (k === 'n') { e.preventDefault(); newCardAt(...freeSpot()) }
@@ -2188,7 +2324,10 @@ const SHORTCUTS = [
     ['Arrastar o fundo · roda do mouse', 'mover a mesa'],
     ['Ctrl + roda · Ctrl + e Ctrl −', 'zoom'],
     ['Ctrl+0 · Ctrl+1', 'ver todos os cartões · voltar a 100%'],
-    ['Alt+1 · Alt+2 · Alt+3', 'tamanho do cartão: P · M · G'],
+    ['Shift + arrastar no fundo', 'seleciona os cartões dentro da caixa'],
+    ['Shift ou Ctrl + clique num cartão', 'põe ou tira da seleção; arrastar um selecionado move todos'],
+    ['Delete · Esc (com seleção)', 'exclui os selecionados · solta a seleção'],
+    ['Alt+1 · Alt+2 · Alt+3', 'tamanho do cartão (ou dos selecionados): P · M · G'],
     ['Ctrl+Z (sem cursor num cartão)', 'desfaz mover, tamanho e ações em lote'],
     ['Arrastar pela faixa de cima do cartão', 'mover (o texto nunca arrasta)'],
     ['Encostar um cartão na borda de outro', 'agrupar; Shift + arrastar solta do grupo'],

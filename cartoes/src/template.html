@@ -20,6 +20,14 @@
   <button id="menu-btn" aria-haspopup="true" aria-expanded="false" aria-label="Menu" title="Menu: backup, lixeira, instantâneos, atalhos">≡</button>
 </div>
 <div id="menu" role="menu" hidden></div>
+<div id="selbox" hidden></div>
+<div id="selbar" hidden>
+  <span id="sel-n"></span>
+  <span class="sel-sizes" title="Tamanho dos selecionados (Alt+1, Alt+2, Alt+3)"><button data-s="p">P</button><button data-s="m">M</button><button data-s="g">G</button></span>
+  <button id="sel-stash" title="Guardar os selecionados na gaveta (não exclui)">guardar</button>
+  <button id="sel-del" title="Excluir os selecionados; vão para a lixeira (Delete)">excluir</button>
+  <button id="sel-clear" title="Soltar a seleção (Esc)">soltar seleção</button>
+</div>
 <div id="dock"></div>
 <div id="toast"></div>
 <div id="show" hidden>
