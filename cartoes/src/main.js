@@ -4,7 +4,7 @@ import { Schema } from 'prosemirror-model'
 import { keymap } from 'prosemirror-keymap'
 import { history, undo, redo } from 'prosemirror-history'
 import { baseKeymap, toggleMark } from 'prosemirror-commands'
-import { inputRules, InputRule } from 'prosemirror-inputrules'
+import { inputRules, InputRule, undoInputRule } from 'prosemirror-inputrules'
 
 /* ------------------------------------------------------------------ *
  *  Schema mínimo: parágrafos, negrito e itálico. Nada além disso.
@@ -57,6 +57,8 @@ let zTop = 1
 let current = null // cartão com foco
 
 const isEmpty = (state) => state.doc.textContent.trim() === ''
+// sem nenhum caractere (nem espaço) e com um parágrafo só
+const isBlank = (state) => state.doc.childCount === 1 && state.doc.textContent === ''
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36))
 const rand = (a, b) => a + Math.random() * (b - a)
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
@@ -332,8 +334,11 @@ function createCard(data = {}, { focus = false, animate = false } = {}) {
         'Mod-i': toggleMark(schema.marks.em),
         'Mod-Enter': () => { spawnNextTo(c); return true },
         Escape: (_s, _d, view) => { view.dom.blur(); return true },
-        Backspace: (s) => {
-          if (isEmpty(s) && s.doc.childCount === 1) { removeCard(c, { undoable: false }); return true }
+        Backspace: (s, dispatch) => {
+          // logo depois de uma regra markdown, Backspace desfaz a conversão (I7)
+          if (undoInputRule(s, dispatch)) return true
+          // só um cartão sem nenhum caractere é apagado; espaços são texto e se apagam um a um (I8)
+          if (isBlank(s)) { removeCard(c, { undoable: false }); return true }
           return false
         },
       }),
@@ -1510,7 +1515,7 @@ addEventListener('keydown', (e) => {
     const m = e.key.toLowerCase()
     if (m === 's') { e.preventDefault(); exportJSON(); return }
     if (m === 'o') { e.preventDefault(); importJSON(); return }
-    // Ctrl+N é reservado pelo navegador; no app desktop fica livre
+    // no navegador o Ctrl+N abre outra janela; no app desktop ele cria um cartão
     if (m === 'n' && disk) { e.preventDefault(); newCardAt(...freeSpot()); return }
   }
   if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.('.ProseMirror')) return

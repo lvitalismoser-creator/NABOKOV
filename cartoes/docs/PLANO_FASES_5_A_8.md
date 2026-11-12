@@ -2,6 +2,8 @@
 
 Alinhado com o dono em 2026-11-03, depois de usar o app por ~2 minutos. Ordem escolhida por ele: **organizador primeiro**. Cada fase só começa com "Sim, Fase N".
 
+> **Leia junto:** `PLANO_AJUSTES_ABORDAGEM.md` (2026-11-11) ajusta a ordem das fases (6, 7a, 7b, 8), o que entra em cada uma, como uma fase é fechada e a validação. Onde os dois divergirem, vale aquele.
+
 ## Diagnóstico de partida
 
 - **Exportar "não existe" na prática.** Só há `Ctrl+S`, sem botão nem menu, e ele gera um `.json` de backup, não um documento legível.
@@ -76,7 +78,7 @@ A tela de embaralhar vira o organizador.
 
 ## Fase 6 — Menu, salvo e exportação
 
-- **Pontinho de salvo** (pode ir já na Fase 5, ver pendências).
+- **Pontinho de salvo.**
 - **Menu ≡** discreto: Exportar…, Importar backup…, Fazer backup (.json), Lixeira, Instantâneos (resolve "restaurar sem console"), Atalhos. Cada item mostra o atalho.
 - **Janela "Exportar":** escolher a ordem (salva, ou a leitura da mesa enquanto não houver nenhuma), o modelo (texto corrido / por seção / ficha completa) e o formato. Uma pré-visualização curta. Salvar pelo diálogo do Windows.
 - **Formatos:**
@@ -107,9 +109,9 @@ A tela de embaralhar vira o organizador.
 
 ## Pendências para confirmar
 
-1. **Clicável × "zero poluição":** a Fase 8 deixa a moldura levemente visível no cartão **com foco**. Isso toca o item 3 do "Conceito do cartão". Pode?
-2. **DOCX/ODT sem biblioteca:** gerar à mão (recomendado, sem dependência) ou aceitar uma biblioteca (`docx`/`jszip`)?
-3. **Pontinho de salvo** junto com a Fase 5 (é pequeno e dá confiança desde já)?
+1. ~~**Clicável × "zero poluição":** moldura levemente visível no cartão com foco.~~ **Fechada em 2026-11-11:** aceita como exceção registrada no "Conceito do cartão" (`CLAUDE.md`). Entra na Fase 8.
+2. **DOCX/ODT sem biblioteca:** gerar à mão (recomendado, sem dependência) ou aceitar uma biblioteca (`docx`/`jszip`)? **Adiada:** DOCX/ODT só depois da validação (ver `PLANO_AJUSTES_ABORDAGEM.md`).
+3. ~~**Pontinho de salvo** junto com a Fase 5?~~ **Fechada em 2026-11-11:** vai na Fase 6 (Bloco 6.2).
 
 ## Não verificado / riscos
 
