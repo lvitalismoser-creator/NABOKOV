@@ -6,7 +6,7 @@ Programa desktop para escritores: editor de texto com organização integrada, i
 
 ## Estado atual
 
-App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), pontinho de salvo, menu ≡ (lixeira, instantâneos, atalhos) e exportação TXT/MD/PDF (Fase 6), lixeira, backup `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 43 testes automatizados (`npm test`). Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
+App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), pontinho de salvo, menu ≡ (lixeira, instantâneos, atalhos) e exportação TXT/MD/PDF (Fase 6), mesa infinita com deslocamento e zoom (Fase 7a), lixeira, backup `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 55 testes automatizados (`npm test`). Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
 
 O estado de cada fase (feita / aguardando conferência do dono) fica em `docs/PLANO_FASES_5_A_8.md`.
 
@@ -56,9 +56,15 @@ Só estas três são aceitas. Qualquer outro elemento visível por padrão conti
 
 - **ProseMirror** com schema mínimo: `doc > paragraph+`, marcas `strong` e `em`. Formatação só por markdown (`**x**`, `*x*`, `_x_`) e `Mod-B/I`. Não adicionar toolbar.
 - **Um `EditorView` por cartão**, JS puro, sem framework. Arrasto com Pointer Events, sem biblioteca.
+- **Mesa e câmera (Fase 7a):** os cartões e as molduras de grupo ficam em `#world`, dentro de `#board`. `x`/`y` de cada cartão são posições **do mundo** e nunca mudam por causa da câmera.
+  - Câmera `cam = { x, y, z }` (`tela = mundo * z + (x, y)`), aplicada como `transform` do `#world`. É preferência de tela: fica em `localStorage` `cartoes.ui.cam` (demo: `cartoes.demo.cam`), **fora** do projeto salvo. Mover ou aproximar a mesa não grava o projeto.
+  - `toWorld(sx, sy)`, `viewRect()`, `zoomAt(sx, sy, z)`, `fitAll()` (Ctrl+0), `reveal(lista)` (desloca o mínimo para mostrar os cartões).
+  - Arrastar o fundo ou o botão do meio move; roda rola; `Shift`+roda de lado; `Ctrl`+roda dá zoom no cursor (20% a 200%; perto de 100% vira 100%). Sobre um cartão com texto sobrando, a roda rola o texto dele.
+  - Ao abrir, se nenhum cartão aparece na janela, enquadra tudo (resolve o I1).
+  - Um grupo nunca fica metade na mesa e metade na gaveta: `cleanGroups()` separa a parte guardada (I2/I3).
 - **Dados:** `{ id, x, y, z, r, g, cat, stashed, sa, doc }` por cartão (`g` = grupo, `cat` = cena/nota/lugar, `stashed`/`sa` = gaveta, `doc` = JSON do ProseMirror).
 - **Organizador (Fase 5)**, evolução do antigo "embaralhar" (botão "organizar" ou `E`). Estado `org = { orders, cur }`; ordem `{ id, name|null, note, notes: {idDoCartão: texto}, items: [{ ids, aside }], createdAt, updatedAt }`.
-  - **Uma ordem nunca mexe na mesa.** A exceção é "dispor na mesa": arruma em fileiras na ordem, com o que está de lado ou fora da ordem nas últimas fileiras, e pode ser desfeito pelo aviso.
+  - **Uma ordem nunca mexe na mesa.** A exceção é "dispor na mesa": arruma em fileiras na ordem a partir do canto do mundo (a janela vai para lá, a 100%), com o que está de lado ou fora da ordem nas últimas fileiras, e pode ser desfeito pelo aviso (a câmera também volta).
   - Peça = um cartão ou um grupo. "Separar o grupo nesta ordem" vale só na ordem. "Pôr de lado" (`↑`/`↓`) mantém a peça na fileira, erguida e esmaecida, fora da leitura.
   - Há no máximo uma ordem sem nome ("em teste"). "Salvar" dá nome; numa ordem já nomeada vira "salvar como nova". Embaralhar uma ordem nomeada cria uma ordem em teste e deixa a nomeada intacta.
   - Cartões fora da ordem esperam na bandeja "fora da ordem": clique põe no fim, arrastar põe no lugar. Arrastar da fileira para a bandeja tira o cartão da ordem.
@@ -83,7 +89,7 @@ Só estas três são aceitas. Qualquer outro elemento visível por padrão conti
   - Navegador: download (sem acento no nome) ou a impressão do navegador, no PDF.
   - Console: `cartoes.exportText(idDaOrdem | 'mesa', modelo, formato)` devolve o texto sem gravar nada.
   - DOCX/ODT ficam para depois da validação.
-- Atalhos: `E` abre o organizador; duplo clique no fundo ou `N` cria cartão; `Ctrl/⌘+Enter` cria o próximo ao lado; `Esc` tira o foco; `Backspace` em cartão sem nenhum caractere o apaga (um cartão só com espaços perde os espaços um a um, e `Ctrl+Z` os devolve); `Backspace` logo depois de uma conversão markdown a desfaz.
+- Atalhos: `E` abre o organizador; duplo clique no fundo ou `N` cria cartão (o `N`, no centro do que a janela mostra); `Ctrl+0` mostra todos os cartões, `Ctrl+1` volta a 100%, `Ctrl +`/`Ctrl -` zoom; `Ctrl/⌘+Enter` cria o próximo ao lado; `Esc` tira o foco; `Backspace` em cartão sem nenhum caractere o apaga (um cartão só com espaços perde os espaços um a um, e `Ctrl+Z` os devolve); `Backspace` logo depois de uma conversão markdown a desfaz.
 - Interface em português (pt-BR).
 
 ## Próximos passos
@@ -110,15 +116,16 @@ npm run dist:dir   # só o app descompactado: dist/win-unpacked/Cartões.exe
 ## Testes
 
 ```bash
-npm test              # rebuilda e roda tudo (node:test + Playwright, 43 testes, ~1 min)
+npm test              # rebuilda e roda tudo (node:test + Playwright, 55 testes, ~1,5 min)
 npm run test:browser  # persistência no navegador (contextos limpos)
 npm run test:electron # app desktop; isolado por CARTOES_DATA_DIR (arquivo e perfil do Chromium)
 ```
 
 - `tests/browser.test.cjs`: salvar, demo isolado, JSON ilegível, quarentena, aviso de falha, IndexedDB x espelho, aba única, teto de espera, lixeira, backup/importar, instantâneos, I7, I8, pontinho de salvo.
-- `tests/electron.test.cjs`: ponte sem Node, gravação ao fechar, disco como fonte, `.bak`/instantâneos/recuperação, instância única, ordens no `projeto.json`, pontinho "em disco", restaurar instantâneo do disco, exportar TXT/MD/PDF pelo diálogo (o diálogo é trocado por uma resposta fixa com `app.evaluate`).
+- `tests/electron.test.cjs`: ponte sem Node, gravação ao fechar, disco como fonte, `.bak`/instantâneos/recuperação, instância única, ordens no `projeto.json`, pontinho "em disco", restaurar instantâneo do disco, Ctrl+0/Ctrl+1 da mesa, exportar TXT/MD/PDF pelo diálogo (o diálogo é trocado por uma resposta fixa com `app.evaluate`).
 - `tests/organizer.test.cjs`: ordem de leitura da mesa, mover (teclado e arrasto), pôr de lado, notas, salvar com nome, bandeja, separar grupo, embaralhar (I6), dispor na mesa + desfazer, Ctrl+Z, lixeira devolve ao lugar, exportar/importar ordens, demo isolado.
 - `tests/menu.test.cjs`: menu ≡, lixeira, instantâneos, atalhos (F1), demo isolado.
+- `tests/mesa.test.cjs`: arrasto, ímã, grupos, criação de cartões; câmera (deslocar, zoom no cursor, Ctrl+0/Ctrl+1, posições do mundo com zoom), janela menor (I1), roda sobre cartão com texto, grupo e gaveta (I2/I3).
 - `tests/export.test.cjs`: conteúdo de cada modelo e formato, escapes, janela Exportar e download.
 - Depois de `goto`, espere `.ProseMirror-focused` antes de digitar: a inicialização é assíncrona e teclas antes disso caem nos atalhos globais.
 - Nunca rode testes sem `CARTOES_DATA_DIR` no Electron: sem isso eles gravam no perfil real do usuário.

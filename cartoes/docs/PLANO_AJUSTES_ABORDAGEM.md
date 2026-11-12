@@ -82,6 +82,8 @@ Como no plano original: Exportar…, Importar backup…, Fazer backup (.json), L
 
 ## Fase 7a — Câmera da mesa
 
+> **Estado (2026-11-12):** feita, aguardando conferência do dono no instalador 1.2.0. Detalhes em `PLANO_FASES_5_A_8.md`.
+
 - Mesa infinita com deslocamento e zoom; posições "do mundo" (resolve o I1).
 - Arrastar o fundo, roda, `Ctrl+roda`, `Ctrl+0`, `Ctrl+1`; `N` cria no centro da área visível.
 - De carona: I2/I3 (grupo parcialmente guardado).

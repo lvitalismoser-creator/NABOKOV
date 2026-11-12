@@ -106,7 +106,28 @@ Plano original:
   - Negrito e itálico preservados em todos.
 - **Testes:** abrir cada arquivo gerado e conferir o texto (o `.docx`/`.odt` descompactados; o PDF por tamanho e presença do texto).
 
-## Fase 7 — Mesa
+## Fase 7 — Mesa (dividida em 7a e 7b pelo `PLANO_AJUSTES_ABORDAGEM.md`)
+
+### Fase 7a — Câmera da mesa — feita em 2026-11-12, aguardando conferência do dono
+
+Instalador: `Cartoes-Setup-1.2.0.exe`. Vira ✅ quando o dono instalar e conferir.
+
+**Como ficou:**
+
+- **Mesa infinita.** As posições são "do mundo"; a janela mostra um pedaço. Os dados antigos abrem iguais (câmera em 0,0 a 100%).
+- **Navegar:** arrastar o fundo (ou o botão do meio) move a mesa; a roda rola; `Shift`+roda vai de lado; `Ctrl`+roda dá zoom no cursor (20% a 200%); `Ctrl+0` mostra todos os cartões; `Ctrl+1` volta a 100%; `Ctrl +` e `Ctrl -` aproximam e afastam.
+- **Indicador de zoom** no canto superior esquerdo, só quando o zoom não é 100%. Clicar volta a 100%.
+- **A câmera não entra no projeto.** É preferência de tela; mover a mesa não grava nada nos cartões.
+- `N` cria no centro do que a janela mostra; duplo clique cria sob o cursor; `Ctrl+Enter`, devolver da gaveta e devolver da lixeira trazem a mesa até o cartão.
+- **I1 resolvido:** em janela menor nada some; se nenhum cartão aparece ao abrir, a mesa enquadra todos.
+- **I2/I3 resolvidos:** um grupo nunca fica metade na mesa e metade na gaveta.
+- **"Dispor na mesa"** não sobrepõe mais as fileiras: o que não cabe na janela fica mais abaixo.
+- **Testes:** 5 escritos antes de mexer no arrasto e no ímã, mais 7 da câmera. Total: 55, todos passando.
+
+### Fase 7b — Tamanhos, seleção e modo mapa
+
+Plano original (7a + 7b):
+
 
 - **Mesa infinita** com câmera (deslocamento + zoom). As posições passam a ser "do mundo", não da janela, o que resolve o I1 de vez. Os dados atuais migram sem mudança visível.
 - Arrastar o fundo move a mesa; roda rola; `Ctrl+roda` dá zoom no cursor; `Ctrl+0` = ver tudo; `Ctrl+1` = 100%. Duplo clique no fundo continua criando cartão.
