@@ -6,7 +6,13 @@ Programa desktop para escritores: editor de texto com organização integrada, i
 
 ## Estado atual
 
-App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), lixeira, exportar/importar e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 27 testes automatizados (`npm test`). Plano em andamento: `PLANO_FASES_5_A_8.md`. Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador. Histórico da revisão e do plano de salvamento: `REVISAO_E_PLANO_SALVAMENTO.md`.
+App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), lixeira, exportar/importar e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 27 testes automatizados (`npm test`). Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
+
+Documentos de contexto, em `docs/`:
+
+- `docs/PLANO_FASES_5_A_8.md`: plano vigente e pendências para confirmar.
+- `docs/HANDOFF_2026-11-03.md`: registro da última sessão (Fase 5 e instalador), decisões tomadas sozinho e armadilhas.
+- `docs/REVISAO_E_PLANO_SALVAMENTO.md`: histórico da revisão e do plano de salvamento (Fases 0–4).
 
 - `src/main.js`: lógica (ProseMirror, quadro, arrasto, persistência, demo)
 - `src/style.css`: todo o visual
@@ -59,21 +65,42 @@ Abrir `index.html#demo` carrega cartões de exemplo (inclui um com estouro de te
 
 ## Próximos passos
 
-**O plano vigente é `PLANO_FASES_5_A_8.md`** (decidido com o dono em 2026-11-03): Fase 5 organizador (feita), 6 menu + indicador de salvo + exportação docx/odt/pdf, 7 mesa (pan/zoom/modo mapa, tamanhos P/M/G, seleção múltipla), 8 revisão de interface. A lista abaixo é a antiga; o que nela não estiver no plano continua valendo como pendência.
+O plano vigente é `docs/PLANO_FASES_5_A_8.md` (decidido com o dono em 2026-11-03): 5 organizador, 6 menu + indicador de salvo + exportação docx/odt/pdf, 7 mesa (pan/zoom/modo mapa, tamanhos P/M/G, seleção múltipla), 8 revisão de interface. Cada fase só começa com "Sim, Fase N".
 
-Feitos: app desktop em Electron, arquivo `.json` em disco, `Ctrl+N` livre, salvamento robusto, testes, instalador, organizador (resolve também o I6).
+### Onde estamos
 
-0. **Pendências da revisão (pequenas, fazer primeiro):**
-   - **I1** cartões ficam fora da tela se a janela diminuir (posições são da janela): trazer à vista ao abrir/redimensionar.
-   - **I2/I3** grupo parcialmente guardado: `cleanGroups` conta guardados e `renderGroups` só os da mesa; restaurar um cartão de grupo o devolve longe do grupo.
-   - Restaurar instantâneo sem console (hoje só `cartoes.snapshots()` / `cartoes.restore(t)`), com atalho discreto.
-   - I6 (`shuffled` pode repetir ordem com 2 unidades), I7 (sem `undoInputRule` no Backspace), I8 (Backspace apaga cartão só com espaços sem desfazer).
-   - Teste de falha real de `rename` no Windows (antivírus segurando o arquivo); testar o instalador instalado de fato.
-1. **Usar o app instalado alguns dias** (o dono) antes de decidir o resto.
-2. **Pan/zoom do quadro** (hoje é uma viewport fixa) e posições relativas ao quadro, não à janela. Resolve o I1 de vez; mexe em arrasto e ímã, então com testes novos.
-3. **Organização:** agrupar/ordenar cartões, cor ou marcador discreto, busca.
-4. **Do cartão ao texto:** montar um editor de texto corrido a partir de uma sequência de cartões.
-5. **Exportar/importar** projeto.
+- **Fase 5 feita** (organizador; 27 testes passando). Instalador `dist/Cartoes-Setup-1.0.0.exe` gerado, mas ainda não instalado nem aberto.
+- **Próxima: Fase 6.** Só começa quando o dono disser **"Sim, Fase 6"**.
+
+### Antes da Fase 6, perguntar ao dono
+
+1. **Moldura visível no foco:** a Fase 8 deixa a moldura levemente visível no cartão com foco. Isso toca o item 3 do "Conceito do cartão". Pode?
+2. **DOCX/ODT sem biblioteca:** gerar à mão (ZIP sem compressão + XML, recomendado, sem dependência) ou aceitar uma biblioteca (`docx`/`jszip`)?
+3. **Pontinho de salvo:** não entrou na Fase 5. Confirmar que vai na Fase 6.
+4. **Escuta sobre o organizador:** depois de instalar e usar alguns dias, o que funcionou e o que incomodou (inclui a linha de atalhos no rodapé, `.org-keys`).
+
+### Pendências antigas ainda abertas
+
+- **I1** cartões fora da tela se a janela diminuir (posições são da janela). Fica resolvido na Fase 7 (posições "do mundo").
+- **I2/I3** grupo parcialmente guardado: `cleanGroups` conta guardados e `renderGroups` só os da mesa; restaurar um cartão de grupo o devolve longe do grupo. Previsto de carona na Fase 7.
+- **I7** sem `undoInputRule` no Backspace.
+- **I8** Backspace apaga cartão só com espaços, sem desfazer.
+- Teste de falha real de `rename` no Windows (antivírus segurando o arquivo).
+- Ícone próprio e assinatura do instalador.
+- Passar a versão para 1.1.0 no próximo instalador (hoje 1.0.0).
+- **Busca** de cartões: estava na lista antiga ("Organização") e não entrou no plano.
+- **Editor de texto corrido** a partir de uma sequência de cartões: a exportação "texto corrido" da Fase 6 cobre o documento final; um editor dentro do app não está no plano.
+
+### Saíram da lista antiga (já feitos ou cobertos pelo plano)
+
+- App desktop, arquivo em disco, `Ctrl+N` livre, salvamento robusto, testes, instalador: feitos.
+- I6 (embaralhar repetindo com 2 peças): feito na Fase 5.
+- Agrupar/ordenar cartões e marcador de cor: feitos (grupos por ímã, categorias, organizador da Fase 5).
+- Restaurar instantâneo sem console: Fase 6 (item "Instantâneos" do menu ≡).
+- Exportar/importar projeto: backup `.json` já existe; documentos legíveis vão na Fase 6.
+- Pan/zoom do quadro e posições relativas ao quadro: Fase 7.
+- Usar o app instalado alguns dias: virou a escuta sobre o organizador, acima.
+- Testar o instalador instalado de fato: depende do dono instalar o `Cartoes-Setup-1.0.0.exe` (ver "Não verificado" no handoff).
 
 ## Empacotar (Windows)
 
@@ -104,6 +131,7 @@ npm run test:electron # app desktop; isolado por CARTOES_DATA_DIR (arquivo e per
 ## Regras para trabalhar aqui
 
 - Fazer um bloco por vez; commit ao fim de cada um.
+- Git: até 2026-11-03 o projeto não era repositório git (o handoff registra isso). Desde o commit "Commit inicial do projeto Cartoes" ele é versionado em `lvitalismoser-creator/NABOKOV`, com a raiz do repositório uma pasta acima desta. A regra do commit vale. Se a cópia local em `D:\` não tiver a pasta `.git`, ela não vale ali até alguém rodar `git init` (ou clonar o repositório).
 - Sem dependências novas além das já listadas sem perguntar.
 - Antes de mexer no visual do cartão, reler "Conceito do cartão". Se uma mudança adicionar elemento visível por padrão, provavelmente está errada.
 - Validar visualmente: Playwright já está disponível (`require('playwright')`); tirar screenshot do quadro com `#demo` e conferir pilha, fade e pauta (a pauta fica serrilhada em gradientes com cantos duros em cartões rotacionados; manter bordas suaves).
