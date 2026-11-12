@@ -10,7 +10,7 @@
 <div id="board"><div id="world"></div></div>
 <button id="zoom" hidden title="Voltar a 100% (Ctrl+1) · Ctrl+0 mostra todos os cartões"></button>
 <div id="empty">duplo clique para começar</div>
-<div id="hint">duplo clique · novo cartão &nbsp;·&nbsp; N &nbsp;·&nbsp; encoste um cartão na borda de outro para agrupar &nbsp;·&nbsp; Shift + arrastar solta do grupo</div>
+<div id="tip" hidden></div>
 <div id="corner">
   <span id="saved" role="status" tabindex="-1"><i></i></span>
   <button id="organize" title="Organizar: testar ordens de leitura, pôr cartões de lado, anotar e salvar ordens (E)">
@@ -40,6 +40,7 @@
     <button id="show-again" title="Sortear outra ordem para as peças (R)">embaralhar</button>
     <button id="org-layout" title="Arrumar os cartões na mesa, em fileiras, nesta ordem (pode desfazer)">dispor na mesa</button>
     <button id="org-notes" title="Notas desta ordem e deste ponto dela (C)">notas</button>
+    <button id="org-keys" title="Lista de atalhos do organizador e da mesa (F1)">atalhos</button>
     <button id="org-save" class="primary"></button>
   </div>
   <div id="orders-pop" hidden></div>
@@ -59,7 +60,6 @@
       <div id="tray-chips"></div>
     </div>
   </div>
-  <div class="org-keys">← → ler &nbsp;·&nbsp; arraste as fichas ou Alt + ← → para mover &nbsp;·&nbsp; ↑ pôr de lado &nbsp;·&nbsp; ↓ devolver &nbsp;·&nbsp; Ctrl+Z desfazer</div>
   <div id="drop-mark"></div>
 </div>
 <div id="sheet" hidden>

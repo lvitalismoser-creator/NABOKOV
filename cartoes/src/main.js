@@ -1848,6 +1848,7 @@ document.getElementById('show-close').onclick = closeOrg
 document.getElementById('show-again').onclick = shuffleOrder
 document.getElementById('org-layout').onclick = layOut
 notesBtn.onclick = () => toggleNotes()
+document.getElementById('org-keys').onclick = () => openShortcuts()
 saveBtn.onclick = saveOrder
 document.getElementById('prev').onclick = () => go(idx - 1)
 document.getElementById('next').onclick = () => go(idx + 1)
@@ -2453,6 +2454,19 @@ async function claimWriter() {
   } catch { readOnly = false }
 }
 
+/* Dica de primeira visita: uma vez só, fora do cartão, e some sozinha. */
+const TIP_KEY = 'cartoes.ui.dica'
+function firstTip() {
+  if (lsGet(TIP_KEY)) return
+  lsSet(TIP_KEY, '1')
+  const tip = document.getElementById('tip')
+  tip.textContent = 'É só escrever. Duplo clique no fundo cria outro cartão · o menu ≡ tem os atalhos'
+  tip.hidden = false
+  requestAnimationFrame(() => tip.classList.add('show'))
+  const bye = () => { tip.classList.remove('show'); setTimeout(() => { tip.hidden = true }, 700) }
+  setTimeout(bye, 12000)
+}
+
 async function start() {
   await claimWriter()
   db = await idbOpen()
@@ -2476,7 +2490,10 @@ async function start() {
     const v = viewRect()
     const seen = live().some((k) => k.x < v.x1 - 40 && k.x + wOf(k) > v.x0 + 40 && k.y < v.y1 - 40 && k.y + hOf(k) > v.y0 + 40)
     if (live().length && !seen) fitAll({ glide: false })
-  } else if (!readOnly) newCardAt(...freeSpot()) // primeira visita: um cartão em branco, cursor piscando
+  } else if (!readOnly) {
+    newCardAt(...freeSpot()) // primeira visita: um cartão em branco, cursor piscando
+    firstTip()
+  }
   ready = true
   paintSaved(readOnly ? 'ro' : 'saved')
   if (readOnly) {
