@@ -186,6 +186,23 @@ test('exportar TXT, MD e PDF pelo diálogo de salvar; cancelar não grava nada',
   assert.equal(readFile().cards.length, 2)
 })
 
+test('Ctrl+0 e Ctrl+1 são da mesa (o zoom de página do menu não os toma)', async () => {
+  const far = (id, x, y, text) => ({ id, x, y, r: 0, doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] } })
+  fs.writeFileSync(FILE, JSON.stringify({ savedAt: Date.now() - 5000, cards: [far('a', 100, 100, 'perto'), far('b', 3200, 2100, 'longe')], trash: [], org: { orders: [], cur: null } }))
+  const { app, win } = await launch()
+  const zoom = () => win.evaluate(() => new DOMMatrix(getComputedStyle(document.getElementById('world')).transform).a)
+  assert.equal(await zoom(), 1)
+  await win.keyboard.press('Control+0'); await sleep(500)
+  const z = await zoom()
+  assert.ok(z < 0.6, 'zoom ' + z)
+  assert.equal(await win.locator('.card', { hasText: 'longe' }).isVisible(), true)
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getZoomFactor()), 1)
+  await win.keyboard.press('Control+1'); await sleep(500)
+  assert.equal(await zoom(), 1)
+  await closeApp(app)
+  assert.deepEqual(readFile().cards.map((k) => [k.x, k.y]), [[100, 100], [3200, 2100]]) // a câmera não entra no projeto
+})
+
 test('a segunda instância não abre', async () => {
   await launch()
   const electronBin = require('electron')

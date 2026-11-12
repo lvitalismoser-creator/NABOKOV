@@ -28,7 +28,22 @@ body {
   user-select: none;
 }
 
-#board { position: fixed; inset: 0; }
+#board { position: fixed; inset: 0; touch-action: none; overflow: hidden; }
+/* o "mundo": a mesa infinita. A câmera (deslocamento + zoom) é o transform dele. */
+#world { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+#world.gliding { transition: transform .32s cubic-bezier(.2, .8, .25, 1); }
+body.panning, body.panning * { cursor: grabbing !important; }
+#zoom[hidden] { display: none; }
+#zoom {
+  position: fixed; left: 18px; top: 14px; z-index: 40;
+  padding: 6px 10px; border: 0; border-radius: 3px; cursor: pointer;
+  background: var(--grain), var(--paper);
+  box-shadow: 0 0 0 .5px rgba(80, 60, 30, .25), 0 4px 10px -6px rgba(70, 50, 20, .5);
+  font: italic 13px/1 var(--serif); color: rgba(60, 45, 25, .75);
+}
+#zoom:hover { color: #b5483a; }
+body.showing #zoom { visibility: hidden; }
+@media (prefers-reduced-motion: reduce) { #world.gliding { transition: none; } }
 
 /* ---------- cartão ---------- */
 

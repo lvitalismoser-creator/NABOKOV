@@ -184,7 +184,11 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus() } })
   app.whenReady().then(() => {
-    Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'editMenu' }, { role: 'viewMenu' }]))
+    // sem os atalhos de zoom da página (Ctrl+0, Ctrl +, Ctrl -): eles são da mesa
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      { role: 'editMenu' },
+      { label: 'View', submenu: [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
+    ]))
     createWindow()
     app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow() })
   })

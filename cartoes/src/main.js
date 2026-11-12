@@ -51,6 +51,7 @@ const BAK = 'cartoes.bak'              // cópia do último estado legível ao a
 const QUAR = 'cartoes.quarentena'       // cartões que não puderam ser carregados
 const CORRUPT = 'cartoes.corrompido'    // texto bruto ilegível (nunca sobrescrito)
 const board = document.getElementById('board')
+const world = document.getElementById('world') // a mesa infinita; a câmera é o transform dele
 const toast = document.getElementById('toast')
 const dock = document.getElementById('dock')
 const cards = new Map()
@@ -69,6 +70,121 @@ const TRAY = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"
 function emptyDoc() {
   return { type: 'doc', content: [{ type: 'paragraph' }] }
 }
+
+/* ------------------------------------------------------------------ *
+ *  Câmera: a mesa é infinita; a janela mostra um pedaço dela.
+ *  As posições dos cartões são "do mundo" e nunca mudam por causa da
+ *  câmera, que é só preferência de tela (fica fora do projeto salvo).
+ *  tela = mundo * z + (x, y)
+ * ------------------------------------------------------------------ */
+const CAM_KEY = DEMO_MODE ? 'cartoes.demo.cam' : 'cartoes.ui.cam'
+const ZMIN = 0.2, ZMAX = 2
+const cam = { x: 0, y: 0, z: 1 }
+const zoomBtn = document.getElementById('zoom')
+let camTimer, glideTimer
+
+function applyCam({ glide = false } = {}) {
+  cam.z = clamp(cam.z, ZMIN, ZMAX)
+  if (Math.abs(cam.z - 1) < 0.02) cam.z = 1 // perto de 100% vira 100%: texto nítido
+  cam.x = Math.round(cam.x); cam.y = Math.round(cam.y)
+  clearTimeout(glideTimer)
+  world.classList.toggle('gliding', glide)
+  if (glide) glideTimer = setTimeout(() => world.classList.remove('gliding'), 360)
+  world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.z})`
+  zoomBtn.hidden = cam.z === 1
+  zoomBtn.textContent = Math.round(cam.z * 100) + '%'
+  clearTimeout(camTimer)
+  camTimer = setTimeout(() => lsSet(CAM_KEY, JSON.stringify(cam)), 250)
+}
+function loadCam() {
+  try {
+    const c = JSON.parse(lsGet(CAM_KEY))
+    if (c && [c.x, c.y, c.z].every(Number.isFinite)) Object.assign(cam, { x: c.x, y: c.y, z: c.z })
+  } catch {}
+  applyCam()
+}
+const toWorld = (sx, sy) => [(sx - cam.x) / cam.z, (sy - cam.y) / cam.z]
+/* Pedaço do mundo que a janela mostra. */
+const viewRect = () => ({ x0: -cam.x / cam.z, y0: -cam.y / cam.z, x1: (innerWidth - cam.x) / cam.z, y1: (innerHeight - cam.y) / cam.z })
+
+/* Zoom mantendo fixo o ponto da tela (sx, sy): o que está sob o cursor fica sob o cursor. */
+function zoomAt(sx, sy, z, opts) {
+  z = clamp(z, ZMIN, ZMAX)
+  const [wx, wy] = toWorld(sx, sy)
+  cam.z = z; cam.x = sx - wx * z; cam.y = sy - wy * z
+  applyCam(opts)
+}
+const zoomBy = (f) => zoomAt(innerWidth / 2, innerHeight / 2, cam.z * f, { glide: true })
+
+/* Ver tudo (Ctrl+0): enquadra todos os cartões da mesa, sem passar de 100%. */
+function fitAll(opts = { glide: true }) {
+  const list = live()
+  if (!list.length) { Object.assign(cam, { x: 0, y: 0, z: 1 }); applyCam(opts); return }
+  const r = rectOf(list), PAD = 48, TOP = 64
+  const z = clamp(Math.min(1, (innerWidth - PAD * 2) / (r.x1 - r.x0), (innerHeight - TOP - PAD) / (r.y1 - r.y0)), ZMIN, ZMAX)
+  cam.z = z
+  cam.x = (innerWidth - (r.x0 + r.x1) * z) / 2
+  cam.y = TOP + (innerHeight - TOP - PAD - (r.y1 - r.y0) * z) / 2 - r.y0 * z
+  applyCam(opts)
+}
+
+/* Desloca a mesa o mínimo necessário para estes cartões aparecerem inteiros. */
+function reveal(list, opts = { glide: true }) {
+  if (!list.length) return
+  const r = rectOf(list), v = viewRect(), M = 28 / cam.z, T = 60 / cam.z
+  let dx = 0, dy = 0
+  if (r.x1 - r.x0 > v.x1 - v.x0 - 2 * M || r.x0 < v.x0 + M) dx = v.x0 + M - r.x0
+  else if (r.x1 > v.x1 - M) dx = v.x1 - M - r.x1
+  if (r.y1 - r.y0 > v.y1 - v.y0 - T - M || r.y0 < v.y0 + T) dy = v.y0 + T - r.y0
+  else if (r.y1 > v.y1 - M) dy = v.y1 - M - r.y1
+  if (!dx && !dy) return
+  cam.x += dx * cam.z; cam.y += dy * cam.z
+  applyCam(opts)
+}
+
+/* Arrastar o fundo (ou o botão do meio em qualquer lugar) move a mesa. */
+board.addEventListener('pointerdown', (e) => {
+  const bg = e.target === board || e.target === world
+  if (!((e.button === 0 && bg && !e.shiftKey) || e.button === 1)) return
+  if (e.button === 1) e.preventDefault()
+  const sx = e.clientX, sy = e.clientY, x0 = cam.x, y0 = cam.y
+  let moved = false
+  board.setPointerCapture(e.pointerId)
+  const move = (ev) => {
+    if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return
+    if (!moved) { moved = true; document.body.classList.add('panning') }
+    cam.x = x0 + ev.clientX - sx; cam.y = y0 + ev.clientY - sy
+    applyCam()
+  }
+  const up = () => {
+    board.removeEventListener('pointermove', move)
+    board.removeEventListener('pointerup', up)
+    board.removeEventListener('pointercancel', up)
+    document.body.classList.remove('panning')
+  }
+  board.addEventListener('pointermove', move)
+  board.addEventListener('pointerup', up)
+  board.addEventListener('pointercancel', up)
+})
+
+/* Roda: rola a mesa; Ctrl + roda (ou pinça) dá zoom no cursor.
+ * Sobre um cartão com mais texto do que cabe, a roda rola o texto dele. */
+board.addEventListener('wheel', (e) => {
+  const unit = e.deltaMode === 1 ? 28 : e.deltaMode === 2 ? innerHeight : 1
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault()
+    zoomAt(e.clientX, e.clientY, cam.z * Math.exp(-e.deltaY * unit * 0.0016))
+    return
+  }
+  const sc = e.target.closest?.('.scroll')
+  if (sc && sc.scrollHeight > sc.clientHeight + 1) return
+  e.preventDefault()
+  let dx = e.deltaX * unit, dy = e.deltaY * unit
+  if (e.shiftKey && !dx) { dx = dy; dy = 0 }
+  cam.x -= dx; cam.y -= dy
+  applyCam()
+}, { passive: false })
+zoomBtn.onclick = () => zoomAt(innerWidth / 2, innerHeight / 2, 1, { glide: true })
 
 /* ------------------------------------------------------------------ *
  *  Persistência
@@ -382,7 +498,7 @@ function createCard(data = {}, { focus = false, animate = false } = {}) {
 
   wire(c)
   cards.set(c.id, c)
-  board.appendChild(el)
+  world.appendChild(el)
   measure(c)
   syncEmpty()
   renderGroups()
@@ -443,7 +559,17 @@ function rectOf(list) {
 const reading = (list) => [...list].sort((a, b) =>
   Math.abs(a.y - b.y) < H * 0.6 ? a.x - b.x : a.y - b.y)
 
+/* Mantém os grupos coerentes:
+ * - um grupo nunca fica metade na mesa e metade na gaveta (I2/I3): a parte
+ *   guardada vira um grupo próprio, que volta junta e no lugar onde saiu;
+ * - grupo de um cartão só deixa de ser grupo. */
 function cleanGroups() {
+  const by = new Map()
+  cards.forEach((k) => { if (k.g) { if (!by.has(k.g)) by.set(k.g, []); by.get(k.g).push(k) } })
+  for (const list of by.values()) {
+    const away = list.filter((k) => k.stashed)
+    if (away.length && away.length < list.length) { const gid = uid(); away.forEach((k) => { k.g = gid }) }
+  }
   const n = new Map()
   cards.forEach((k) => { if (k.g) n.set(k.g, (n.get(k.g) || 0) + 1) })
   cards.forEach((k) => { if (k.g && n.get(k.g) < 2) k.g = null })
@@ -475,7 +601,7 @@ function renderGroups() {
         const m = reading(live().filter((k) => k.g === gid))
         if (m.length) startDrag(m[0], e, e.currentTarget)
       })
-      board.appendChild(f)
+      world.appendChild(f)
       frames.set(gid, f)
     }
     const r = rectOf(list)
@@ -525,7 +651,6 @@ function startDrag(c, e, host) {
   const list = unitOf(c)
   const start = list.map((k) => [k, k.x, k.y])
   const r0 = rectOf(list)
-  const minY = list.length > 1 ? 34 : -20
   const sx = e.clientX, sy = e.clientY
   let moved = false, snap = null, lit = []
   host.setPointerCapture(e.pointerId)
@@ -536,11 +661,10 @@ function startDrag(c, e, host) {
     lit.forEach((k) => k.el.classList.add('magnet'))
   }
   const move = (ev) => {
-    let dx = ev.clientX - sx, dy = ev.clientY - sy
-    if (!moved && Math.hypot(dx, dy) < 4) return
+    if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return
     if (!moved) { moved = true; list.forEach((k) => { k.dragging = true; k.el.classList.add('dragging') }) }
-    dx = clamp(dx, -W + 80 - r0.x0, innerWidth - 80 - r0.x0)
-    dy = clamp(dy, minY - r0.y0, innerHeight - 60 - r0.y0)
+    // a mesa é infinita: sem cercas; o deslocamento da tela vira deslocamento do mundo
+    let dx = (ev.clientX - sx) / cam.z, dy = (ev.clientY - sy) / cam.z
     snap = magnet(list, r0, dx, dy)
     if (snap) { dx += snap.sx; dy += snap.sy }
     start.forEach(([k, x, y]) => {
@@ -650,6 +774,7 @@ function reviveFromTrash(id) {
   if (cards.has(data.id)) data.id = undefined
   const c = createCard(data, { animate: true, focus: true })
   cleanGroups(); renderGroups(); syncEmpty(); save()
+  reveal([c])
   return c
 }
 
@@ -711,7 +836,7 @@ function stashUnit(list) {
     setTimeout(() => { k.el.classList.remove('stashing'); k.el.classList.add('stashed') }, 180)
   })
   if (list.includes(current)) { current = null; document.body.classList.remove('editing') }
-  syncEmpty(); renderGroups(); renderDock(); save()
+  cleanGroups(); syncEmpty(); renderGroups(); renderDock(); save()
 }
 
 function restoreUnit(list) {
@@ -725,6 +850,7 @@ function restoreUnit(list) {
   })
   bringUnitToFront(list)
   syncEmpty(); renderGroups(); renderDock(); save()
+  reveal(list)
 }
 
 function chipOf(lead, n, extraClass = '') {
@@ -768,21 +894,22 @@ function renderDock() {
  * ------------------------------------------------------------------ */
 function newCardAt(x, y) {
   if (blocked()) return null
-  return createCard(
-    { x: clamp(x, 12, innerWidth - W - 12), y: clamp(y, 12, innerHeight - H - 40) },
-    { animate: true, focus: true },
-  )
+  return createCard({ x: Math.round(x), y: Math.round(y) }, { animate: true, focus: true })
 }
 
+/* Ctrl+Enter: o próximo nasce à direita; sem espaço à vista, embaixo. A mesa acompanha. */
 function spawnNextTo(c) {
+  const v = viewRect()
   let x = c.x + W + 26, y = c.y
-  if (x + W > innerWidth - 12) { x = c.x; y = c.y + H + 26 }
-  if (y + H > innerHeight - 30) { x = c.x + 30; y = c.y + 30 }
-  newCardAt(x, y)
+  if (x + W > v.x1 - 12 && c.y + 2 * H + 26 <= v.y1 - 12) { x = c.x; y = c.y + H + 26 }
+  const n = newCardAt(x, y)
+  if (n) reveal([n])
 }
 
+/* Um lugar livre perto do centro do que a janela mostra. */
 function freeSpot() {
-  const cx = (innerWidth - W) / 2, cy = (innerHeight - H) / 2
+  const v = viewRect()
+  const cx = (v.x0 + v.x1 - W) / 2, cy = (v.y0 + v.y1 - H) / 2
   for (let i = 0; i < 30; i++) {
     const x = cx + (i % 6) * 34 - 70 + rand(-6, 6), y = cy + Math.floor(i / 6) * 30 - 40 + rand(-6, 6)
     const taken = live().some((k) => Math.abs(k.x - x) < 24 && Math.abs(k.y - y) < 24)
@@ -792,7 +919,9 @@ function freeSpot() {
 }
 
 board.addEventListener('dblclick', (e) => {
-  if (e.target === board) newCardAt(e.clientX - W / 2, e.clientY - H / 2)
+  if (e.target !== board && e.target !== world) return
+  const [x, y] = toWorld(e.clientX, e.clientY)
+  newCardAt(x - W / 2, y - H / 2)
 })
 
 /* ------------------------------------------------------------------ *
@@ -1176,6 +1305,7 @@ function layOut() {
   if (!o || !list.length) { say('Não há peças na ordem para dispor'); return }
   if (blocked()) return
   const before = [...cards.values()].map((k) => ({ k, x: k.x, y: k.y, z: k.z, g: k.g, stashed: k.stashed }))
+  const camBefore = { ...cam }
   // o que não está na leitura (de lado, fora da ordem) vai para fileiras abaixo, para nada ficar por baixo
   const used = new Set(list.flatMap((p) => p.cs))
   const rest = unitsFrom(live().filter((k) => !used.has(k))).map((u) => ({ cs: u, rest: true }))
@@ -1185,7 +1315,7 @@ function layOut() {
   const flow = (arr) => {
     for (const p of arr) {
       const w = p.cs.length * W + (p.cs.length - 1) * GAP
-      if (row.length && x + w > innerWidth - M) { rows.push(row); row = []; x = M }
+      if (row.length && x + w > Math.max(innerWidth, 1120) - M) { rows.push(row); row = []; x = M }
       row.push([p, x]); x += w + GX
     }
     if (row.length) rows.push(row)
@@ -1193,9 +1323,8 @@ function layOut() {
   }
   flow(list)
   flow(rest)
-  // enquanto a mesa não rola (Fase 7), fileiras demais se sobrepõem como fichas empilhadas
-  const room = innerHeight - TOP - 24 - H
-  const stepY = rows.length > 1 ? Math.max(64, Math.min(H + GY, room / (rows.length - 1))) : 0
+  // a mesa rola: as fileiras nunca se sobrepõem; o que não couber na janela fica mais abaixo
+  const stepY = H + GY
   // cada peça de vários cartões fica (ou vira) um grupo; o resto se solta
   for (const p of list) {
     let gid = null
@@ -1215,6 +1344,8 @@ function layOut() {
   })))
   cleanGroups(); renderGroups(); renderDock(); syncEmpty(); save()
   closeOrg()
+  // as fileiras começam no canto do mundo; a janela vai para lá, a 100%
+  Object.assign(cam, { x: 0, y: 0, z: 1 }); applyCam()
   sayUndo(`${n} cartões dispostos nesta ordem` + (rest.length ? '; os de fora ficaram embaixo' : ''), () => {
     for (const b of before) {
       if (!cards.has(b.k.id)) continue
@@ -1223,6 +1354,7 @@ function layOut() {
       place(b.k)
     }
     cleanGroups(); renderGroups(); renderDock(); syncEmpty(); save()
+    Object.assign(cam, camBefore); applyCam()
   })
 }
 
@@ -1555,6 +1687,11 @@ addEventListener('keydown', (e) => {
     if (m === 'o') { e.preventDefault(); importJSON(); return }
     // no navegador o Ctrl+N abre outra janela; no app desktop ele cria um cartão
     if (m === 'n' && disk) { e.preventDefault(); newCardAt(...freeSpot()); return }
+    // câmera: Ctrl+0 mostra tudo, Ctrl+1 volta a 100%, Ctrl + e Ctrl - aproximam e afastam
+    if (m === '0') { e.preventDefault(); fitAll(); return }
+    if (m === '1') { e.preventDefault(); zoomAt(innerWidth / 2, innerHeight / 2, 1, { glide: true }); return }
+    if (m === '+' || m === '=') { e.preventDefault(); zoomBy(1.2); return }
+    if (m === '-') { e.preventDefault(); zoomBy(1 / 1.2); return }
   }
   if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.('.ProseMirror')) return
   const k = e.key.toLowerCase()
@@ -1986,6 +2123,9 @@ function openExport() {
 const SHORTCUTS = [
   ['Na mesa', [
     ['Duplo clique no fundo ou N', 'novo cartão'],
+    ['Arrastar o fundo · roda do mouse', 'mover a mesa'],
+    ['Ctrl + roda · Ctrl + e Ctrl −', 'zoom'],
+    ['Ctrl+0 · Ctrl+1', 'ver todos os cartões · voltar a 100%'],
     ['Arrastar pela faixa de cima do cartão', 'mover (o texto nunca arrasta)'],
     ['Encostar um cartão na borda de outro', 'agrupar; Shift + arrastar solta do grupo'],
     ['T', 'devolve o último cartão excluído'],
@@ -2085,7 +2225,8 @@ async function claimWriter() {
 async function start() {
   await claimWriter()
   db = await idbOpen()
-  if (DEMO_MODE) { ready = true; paintSaved('saved'); demo(); return }
+  if (DEMO_MODE) { ready = true; paintSaved('saved'); applyCam(); demo(); return }
+  loadCam()
   const { list, lost, diskWarn } = await load()
   let lostNow = lost
   for (const d of list) {
@@ -2100,6 +2241,10 @@ async function start() {
   pruneOrg()
   if (cards.size) {
     cleanGroups(); renderGroups(); renderDock()
+    // se nada do que existe aparece na janela (janela menor, câmera antiga), enquadra tudo (I1)
+    const v = viewRect()
+    const seen = live().some((k) => k.x < v.x1 - 40 && k.x + W > v.x0 + 40 && k.y < v.y1 - 40 && k.y + H > v.y0 + 40)
+    if (live().length && !seen) fitAll({ glide: false })
   } else if (!readOnly) newCardAt(...freeSpot()) // primeira visita: um cartão em branco, cursor piscando
   ready = true
   paintSaved(readOnly ? 'ro' : 'saved')
