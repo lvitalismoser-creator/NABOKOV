@@ -124,7 +124,19 @@ Instalador: `Cartoes-Setup-1.2.0.exe`. Vira ✅ quando o dono instalar e conferi
 - **"Dispor na mesa"** não sobrepõe mais as fileiras: o que não cabe na janela fica mais abaixo.
 - **Testes:** 5 escritos antes de mexer no arrasto e no ímã, mais 7 da câmera. Total: 55, todos passando.
 
-### Fase 7b — Tamanhos, seleção e modo mapa
+### Fase 7b — Tamanhos, seleção e modo mapa — feita em 2026-11-12, aguardando conferência do dono
+
+Instalador: `Cartoes-Setup-1.3.0.exe`. Vira ✅ quando o dono instalar e conferir.
+
+**Como ficou:**
+
+- **Tamanhos P/M/G** na proporção de ficha: 252×158, 340×214 e 474×298, com 4, 6 e 9 linhas de pauta. A letra é a mesma; muda quanto texto aparece. Botões `P M G` no hover do cartão e `Alt+1/2/3`. Ímã, moldura de grupo e "dispor na mesa" respeitam tamanhos mistos.
+- **Seleção múltipla:** `Shift`+arrastar no fundo desenha a caixa; `Shift`/`Ctrl`+clique põe ou tira um cartão. Arrastar um selecionado move todos. A barra da seleção oferece tamanho, guardar e excluir; `Delete` exclui e `Esc` solta.
+- **Desfazer:** as ações em lote mostram "desfazer" no aviso, e `Ctrl+Z` sem cursor num cartão desfaz mover, mudar de tamanho, guardar e excluir em lote.
+- **Modo mapa** abaixo de 45%: primeiras palavras em letra grande e faixa na cor da categoria; clicar num cartão aproxima até ele, a 100%.
+- **De carona:** os botões do cartão não roubam mais o foco do texto; a pilha só aparece quando sobra texto de verdade (antes, um cartão cheio até a última linha já mostrava a pilha).
+- **Testes:** 9 novos. Total: 64, todos passando.
+
 
 Plano original (7a + 7b):
 

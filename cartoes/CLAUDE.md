@@ -6,7 +6,7 @@ Programa desktop para escritores: editor de texto com organização integrada, i
 
 ## Estado atual
 
-App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), pontinho de salvo, menu ≡ (lixeira, instantâneos, atalhos) e exportação TXT/MD/PDF (Fase 6), mesa infinita com deslocamento e zoom (Fase 7a), lixeira, backup `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 55 testes automatizados (`npm test`). Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
+App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), pontinho de salvo, menu ≡ (lixeira, instantâneos, atalhos) e exportação TXT/MD/PDF (Fase 6), mesa infinita com deslocamento e zoom (Fase 7a), tamanhos P/M/G, seleção múltipla e modo mapa (Fase 7b), lixeira, backup `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 64 testes automatizados (`npm test`). Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
 
 O estado de cada fase (feita / aguardando conferência do dono) fica em `docs/PLANO_FASES_5_A_8.md`.
 
@@ -34,7 +34,7 @@ Abrir `index.html#demo` carrega cartões de exemplo (inclui um com estouro de te
 
 ## Conceito do cartão (não quebrar)
 
-1. **Bloco finito, virtualmente ilimitado.** Tamanho fixo (340×214, proporção de ficha). Nunca cresce, nunca bloqueia a digitação.
+1. **Bloco finito, virtualmente ilimitado.** Tamanho fixo (340×214, proporção de ficha; P e G são a exceção registrada abaixo). Nunca cresce, nunca bloqueia a digitação.
 2. **Estouro = pilha.** Quando há mais texto do que cabe, o texto rola dentro do cartão e surgem folhas atrás dele (`data-depth` 0–3, calculado em `measure()`). Fade nas bordas indica conteúdo acima/abaixo. Foi decisão explícita: **não** encadear em segundo cartão.
 3. **Zero poluição visual.** Sem barra de ferramentas, sem título, sem placeholder, sem campos obrigatórios. Controles (grip de arrasto, ×) só no hover.
 4. **Cartão novo nasce com foco e cursor piscando.** Primeira visita: um cartão em branco já pronto.
@@ -62,7 +62,14 @@ Só estas três são aceitas. Qualquer outro elemento visível por padrão conti
   - Arrastar o fundo ou o botão do meio move; roda rola; `Shift`+roda de lado; `Ctrl`+roda dá zoom no cursor (20% a 200%; perto de 100% vira 100%). Sobre um cartão com texto sobrando, a roda rola o texto dele.
   - Ao abrir, se nenhum cartão aparece na janela, enquadra tudo (resolve o I1).
   - Um grupo nunca fica metade na mesa e metade na gaveta: `cleanGroups()` separa a parte guardada (I2/I3).
-- **Dados:** `{ id, x, y, z, r, g, cat, stashed, sa, doc }` por cartão (`g` = grupo, `cat` = cena/nota/lugar, `stashed`/`sa` = gaveta, `doc` = JSON do ProseMirror).
+- **Tamanhos P/M/G (Fase 7b):** `SIZES` = 252×158, 340×214, 474×298 (4, 6 e 9 linhas de pauta). `wOf(c)`/`hOf(c)` em todo cálculo de geometria (ímã, moldura, enquadrar, dispor na mesa). Botões `P M G` no hover (`.sizes`) e `Alt+1/2/3`. O canto de cima à esquerda não sai do lugar; a letra é a mesma, muda quanto texto aparece.
+- **Seleção múltipla (Fase 7b):** `sel` (Set de cartões), classe `.selected`, barra `#selbar`.
+  - `Shift`+arrastar no fundo desenha a caixa (`startBox`); `Shift`/`Ctrl`+clique num cartão põe ou tira (no texto: `Ctrl`+clique sempre; `Shift`+clique só se o cursor não estiver naquele cartão). Clique no fundo ou `Esc` solta.
+  - Arrastar um selecionado move todos, com os colegas de grupo (`selUnits()`), sem ímã. `Shift`+arrastar só solta do grupo quando o arrasto começa de fato.
+  - Em lote: tamanho, guardar, excluir (`Delete`). Tudo com desfazer.
+- **Desfazer da mesa:** `Ctrl+Z` sem cursor num cartão (`rememberMesa`/`undoMesa`) desfaz mover, tamanho e as ações em lote. As ações em lote também têm "desfazer" no aviso; `once()` garante que cada uma só é desfeita uma vez. Não há refazer.
+- **Modo mapa (Fase 7b):** abaixo de `MAP_Z` = 45% o `body` ganha a classe `map`: some o texto miúdo e aparece `.mapface` (primeiras 8 palavras, letra grande), com a faixa de cima na cor da categoria. No mapa o cartão inteiro arrasta e um clique aproxima até ele (`zoomToCard`).
+- **Dados:** `{ id, x, y, z, r, g, cat, s, stashed, sa, doc }` por cartão (`g` = grupo, `cat` = cena/nota/lugar, `s` = tamanho `'p'`/`'g'` ou `null` para M, `stashed`/`sa` = gaveta, `doc` = JSON do ProseMirror).
 - **Organizador (Fase 5)**, evolução do antigo "embaralhar" (botão "organizar" ou `E`). Estado `org = { orders, cur }`; ordem `{ id, name|null, note, notes: {idDoCartão: texto}, items: [{ ids, aside }], createdAt, updatedAt }`.
   - **Uma ordem nunca mexe na mesa.** A exceção é "dispor na mesa": arruma em fileiras na ordem a partir do canto do mundo (a janela vai para lá, a 100%), com o que está de lado ou fora da ordem nas últimas fileiras, e pode ser desfeito pelo aviso (a câmera também volta).
   - Peça = um cartão ou um grupo. "Separar o grupo nesta ordem" vale só na ordem. "Pôr de lado" (`↑`/`↓`) mantém a peça na fileira, erguida e esmaecida, fora da leitura.
@@ -116,7 +123,7 @@ npm run dist:dir   # só o app descompactado: dist/win-unpacked/Cartões.exe
 ## Testes
 
 ```bash
-npm test              # rebuilda e roda tudo (node:test + Playwright, 55 testes, ~1,5 min)
+npm test              # rebuilda e roda tudo (node:test + Playwright, 64 testes, ~2 min)
 npm run test:browser  # persistência no navegador (contextos limpos)
 npm run test:electron # app desktop; isolado por CARTOES_DATA_DIR (arquivo e perfil do Chromium)
 ```
@@ -125,7 +132,7 @@ npm run test:electron # app desktop; isolado por CARTOES_DATA_DIR (arquivo e per
 - `tests/electron.test.cjs`: ponte sem Node, gravação ao fechar, disco como fonte, `.bak`/instantâneos/recuperação, instância única, ordens no `projeto.json`, pontinho "em disco", restaurar instantâneo do disco, Ctrl+0/Ctrl+1 da mesa, exportar TXT/MD/PDF pelo diálogo (o diálogo é trocado por uma resposta fixa com `app.evaluate`).
 - `tests/organizer.test.cjs`: ordem de leitura da mesa, mover (teclado e arrasto), pôr de lado, notas, salvar com nome, bandeja, separar grupo, embaralhar (I6), dispor na mesa + desfazer, Ctrl+Z, lixeira devolve ao lugar, exportar/importar ordens, demo isolado.
 - `tests/menu.test.cjs`: menu ≡, lixeira, instantâneos, atalhos (F1), demo isolado.
-- `tests/mesa.test.cjs`: arrasto, ímã, grupos, criação de cartões; câmera (deslocar, zoom no cursor, Ctrl+0/Ctrl+1, posições do mundo com zoom), janela menor (I1), roda sobre cartão com texto, grupo e gaveta (I2/I3).
+- `tests/mesa.test.cjs`: arrasto, ímã, grupos, criação de cartões; câmera (deslocar, zoom no cursor, Ctrl+0/Ctrl+1, posições do mundo com zoom), janela menor (I1), roda sobre cartão com texto, grupo e gaveta (I2/I3); tamanhos P/M/G (ímã e moldura mistos); seleção múltipla e ações em lote; modo mapa.
 - `tests/export.test.cjs`: conteúdo de cada modelo e formato, escapes, janela Exportar e download.
 - Depois de `goto`, espere `.ProseMirror-focused` antes de digitar: a inicialização é assíncrona e teclas antes disso caem nos atalhos globais.
 - `seed()` (em `tests/helpers.cjs`) grava os dados iniciais abrindo antes `tests/blank.html` (mesma origem `file://`). Não use `addInitScript` para ler ou gravar `localStorage`: num recarregamento rápido ele enxerga o armazenamento vazio e a página perde o que acabou de gravar (só no Playwright; sem script de preparação o app não perde nada, conferido em 40 recargas imediatas).

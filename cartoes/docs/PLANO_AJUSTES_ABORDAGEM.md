@@ -93,6 +93,8 @@ Como no plano original: Exportar…, Importar backup…, Fazer backup (.json), L
 
 ## Fase 7b — Tamanhos, seleção e modo mapa
 
+> **Estado (2026-11-12):** feita, aguardando conferência do dono no instalador 1.3.0. Detalhes em `PLANO_FASES_5_A_8.md`.
+
 - Tamanhos P/M/G (exceção registrada no Conceito).
 - Seleção múltipla com ações em lote e desfazer.
 - Modo mapa abaixo de ~45%.
