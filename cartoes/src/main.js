@@ -5,6 +5,7 @@ import { keymap } from 'prosemirror-keymap'
 import { history, undo, redo } from 'prosemirror-history'
 import { baseKeymap, toggleMark } from 'prosemirror-commands'
 import { inputRules, InputRule, undoInputRule } from 'prosemirror-inputrules'
+import { toTxt, toMd, toHtml, toHtmlBody, blocksOf, fileName } from './export.js'
 
 /* ------------------------------------------------------------------ *
  *  Schema mínimo: parágrafos, negrito e itálico. Nada além disso.
@@ -665,10 +666,11 @@ function showUndo(snapshot) {
 }
 
 /* Aviso com um botão "desfazer" (some sozinho em 6 s). */
-function sayUndo(msg, fn) {
+const sayUndo = (msg, fn) => sayAct(msg, 'desfazer', fn)
+function sayAct(msg, label, fn) {
   toast.textContent = msg
   const b = document.createElement('button')
-  b.textContent = 'desfazer'
+  b.textContent = label
   b.onclick = () => { toast.classList.remove('show'); fn() }
   toast.append(b)
   toast.classList.add('show')
@@ -1538,6 +1540,9 @@ addEventListener('keydown', (e) => {
     return
   }
   if (e.key === 'F1') { e.preventDefault(); e.stopPropagation(); openShortcuts(); return }
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'e' && !e.target.closest?.('input, textarea')) {
+    e.preventDefault(); e.stopPropagation(); openExport(); return
+  }
   if (!menu.hidden) {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(); menuBtn.focus(); return }
     if (e.target.closest?.('#menu')) return
@@ -1662,6 +1667,11 @@ window.cartoes = {
   trash: () => trash.map((d) => ({ id: d.id, em: new Date(d.deletedAt).toLocaleString(), texto: docText(d.doc).slice(0, 60) })),
   reopen: (id) => reviveFromTrash(id),
   ordens: () => JSON.parse(JSON.stringify(org)),
+  // texto do documento, sem gravar nada: cartoes.exportText('mesa' | idDaOrdem, 'corrido'|'secao'|'ficha', 'txt'|'md'|'pdf')
+  exportText: (src = 'mesa', model = 'corrido', format = 'txt') => {
+    const x = exportSources().find((k) => k.id === src)
+    return x ? renderExport(exportData(x), model, format) : null
+  },
   snapshots: async () => (await listSnapshots()).map((s) => ({ t: s.t, quando: new Date(s.t).toLocaleString(), cartoes: s.n })),
   restore: restoreSnapshot,
 }
@@ -1673,6 +1683,7 @@ const menuBtn = document.getElementById('menu-btn')
 const menu = document.getElementById('menu')
 const sheet = document.getElementById('sheet')
 const sheetBody = document.getElementById('sheet-body')
+const nCards = (n) => (n === 1 ? '1 cartão' : `${n} cartões`)
 const elt = (tag, cls, text) => {
   const e = document.createElement(tag)
   if (cls) e.className = cls
@@ -1681,6 +1692,8 @@ const elt = (tag, cls, text) => {
 }
 
 const MENU = [
+  { label: 'Exportar…', key: 'Ctrl+E', run: () => openExport() },
+  null,
   { label: 'Importar backup…', key: 'Ctrl+O', run: () => importJSON() },
   { label: 'Fazer backup (.json)', key: 'Ctrl+S', run: () => exportJSON() },
   null,
@@ -1728,7 +1741,7 @@ function openSheet(title, { wide = false } = {}) {
   sheet.hidden = false
   return sheetBody
 }
-function closeSheet() { sheet.hidden = true; sheetBody.replaceChildren() }
+function closeSheet() { sheet.hidden = true; sheetBody.replaceChildren(); sheetBody.className = '' }
 document.getElementById('sheet-close').onclick = closeSheet
 sheet.addEventListener('pointerdown', (e) => { if (e.target === sheet) closeSheet() })
 
@@ -1779,7 +1792,7 @@ async function openSnapshots() {
   for (const s of list) {
     const li = elt('li')
     const main = elt('div', 'r-main')
-    main.append(elt('div', 'r-text', when(s.t)), elt('div', 'r-meta', `${s.n} cartão${s.n === 1 ? '' : 'ões'}`))
+    main.append(elt('div', 'r-text', when(s.t)), elt('div', 'r-meta', nCards(s.n)))
     const b = elt('button', 'act', 'voltar a este')
     b.onclick = () => {
       ul.querySelectorAll('.asking').forEach((x) => x.classList.remove('asking'))
@@ -1803,6 +1816,173 @@ async function openSnapshots() {
   body.append(ul)
 }
 
+/* ------------------------------------------------------------------ *
+ *  Exportar: documento legível (PDF, TXT, MD) a partir de uma ordem
+ *  ou da leitura da mesa. Peças postas de lado não saem.
+ * ------------------------------------------------------------------ */
+const desk = window.cartoesDisk || null // exportar não toca nos dados: vale também no demo
+const EXP_KEY = 'cartoes.ui.exportar'
+const MODEL_INFO = {
+  corrido: ['texto corrido', 'só o texto, um cartão depois do outro'],
+  secao: ['por seção', 'cada cartão vira uma seção numerada, com a categoria'],
+  ficha: ['ficha completa', 'número, categoria, texto e as notas da ordem'],
+}
+const FORMAT_INFO = { pdf: 'PDF', txt: 'TXT', md: 'MD (markdown)' }
+
+const parasOf = (c) => {
+  const out = []
+  c.view.state.doc.forEach((p) => {
+    const runs = []
+    p.forEach((t) => runs.push({ text: t.text, strong: t.marks.some((m) => m.type.name === 'strong'), em: t.marks.some((m) => m.type.name === 'em') }))
+    out.push(runs)
+  })
+  return out
+}
+const cardData = (c) => ({ cat: c.cat, paras: parasOf(c) })
+
+/* Fontes possíveis: cada ordem (salva ou em teste) e a leitura da mesa. */
+function exportSources() {
+  const list = org.orders.map((o) => ({ id: o.id, label: o.name ? `«${o.name}»` : 'ordem em teste, sem nome', order: o }))
+  list.push({ id: 'mesa', label: 'leitura da mesa (de cima para baixo, da esquerda para a direita)', order: null })
+  return list
+}
+function exportData(src) {
+  if (!src.order) {
+    return { name: '', note: '', aside: 0, pieces: mesaUnits().map((u) => ({ note: '', cards: u.map(cardData) })) }
+  }
+  const all = piecesOf(src.order)
+  const read = all.filter((p) => !p.it.aside)
+  return {
+    name: src.order.name || '', note: src.order.note || '', aside: all.length - read.length,
+    pieces: read.map((p) => ({ note: src.order.notes[leadOf(p).id] || '', cards: p.cs.map(cardData) })),
+  }
+}
+const renderExport = (data, model, format) =>
+  format === 'txt' ? toTxt(data, model) : format === 'md' ? toMd(data, model) : toHtml(data, model)
+
+function download(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }))
+  const a = document.createElement('a')
+  a.href = url; a.download = name
+  document.body.append(a); a.click(); a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+/* Grava o documento: diálogo de salvar no app desktop; download (ou impressão, no PDF) no navegador. */
+async function exportDocument(data, model, format) {
+  const name = fileName(data.name, format)
+  const text = renderExport(data, model, format)
+  if (desk?.exportFile) {
+    let r
+    try { r = await (format === 'pdf' ? desk.exportPdf({ name, html: text }) : desk.exportFile({ name, ext: format, text })) }
+    catch { r = { ok: false } }
+    if (r?.canceled) return false
+    if (!r?.ok) { say('Não consegui gravar o arquivo. Nada foi alterado; tente outra pasta.'); return false }
+    sayAct(`Exportei «${r.name}» · está em ${r.dir}`, 'mostrar na pasta', () => desk.exportReveal?.())
+    return true
+  }
+  if (format === 'pdf') {
+    // sem o app desktop, o PDF sai pela impressão do navegador ("Salvar como PDF")
+    const f = document.createElement('iframe')
+    f.style.cssText = 'position:fixed;width:0;height:0;border:0;visibility:hidden'
+    f.srcdoc = text
+    f.onload = () => { try { f.contentWindow.focus(); f.contentWindow.print() } finally { setTimeout(() => f.remove(), 60e3) } }
+    document.body.append(f)
+    say('Na janela de impressão, escolha “Salvar como PDF”')
+    return true
+  }
+  // alguns navegadores trocam por "download" um nome com acento: no download vai sem acento
+  const plainName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '')
+  download(plainName, text, format === 'md' ? 'text/markdown;charset=utf-8' : 'text/plain;charset=utf-8')
+  say(`Exportei «${plainName}» · está na pasta de downloads`)
+  return true
+}
+
+function openExport() {
+  const sources = exportSources()
+  let pref = {}
+  try { pref = JSON.parse(lsGet(EXP_KEY)) || {} } catch {}
+  const st = {
+    src: sources.find((x) => x.id === org.cur)?.id || sources[0].id,
+    model: MODEL_INFO[pref.model] ? pref.model : 'corrido',
+    format: FORMAT_INFO[pref.format] ? pref.format : 'pdf',
+  }
+  const body = openSheet('Exportar', { wide: true })
+  body.classList.add('exp')
+  const left = elt('div', 'exp-opts'), right = elt('div', 'exp-side')
+
+  const field = (label) => { const f = elt('div', 'exp-field'); f.append(elt('div', 'exp-label', label)); left.append(f); return f }
+  const fo = field('ordem')
+  const sel = elt('select'); sel.id = 'exp-src'
+  for (const x of sources) { const o = elt('option', null, x.label); o.value = x.id; sel.append(o) }
+  sel.value = st.src
+  fo.append(sel)
+  const info = elt('div', 'exp-info'); info.id = 'exp-info'
+  fo.append(info)
+
+  const choice = (f, name, entries) => {
+    const box = elt('div', 'exp-choice')
+    for (const [value, label, hint] of entries) {
+      const b = elt('button', null, label)
+      b.dataset.v = value; b.dataset.k = name
+      if (hint) b.title = hint
+      b.onclick = () => { st[name] = value; draw() }
+      box.append(b)
+    }
+    f.append(box)
+    return box
+  }
+  const fm = field('modelo')
+  choice(fm, 'model', Object.entries(MODEL_INFO).map(([k, [l, h]]) => [k, l, h]))
+  const hint = elt('div', 'exp-info'); fm.append(hint)
+  choice(field('formato'), 'format', Object.entries(FORMAT_INFO).map(([k, l]) => [k, l]))
+
+  const acts = elt('div', 'exp-acts')
+  const go = elt('button', 'act primary', 'exportar…'); go.id = 'exp-go'
+  const cancel = elt('button', 'act quiet', 'cancelar')
+  cancel.onclick = closeSheet
+  acts.append(go, cancel)
+  left.append(acts)
+
+  right.append(elt('div', 'exp-label', 'pré-visualização (começo do documento)'))
+  const pv = elt('div', 'exp-preview'); pv.id = 'exp-preview'
+  right.append(pv)
+  body.append(left, right)
+
+  const draw = () => {
+    const src = sources.find((x) => x.id === st.src)
+    const data = exportData(src)
+    const n = data.pieces.reduce((a, p) => a + p.cards.length, 0)
+    info.textContent = nCards(n) + (data.aside ? ` · ${data.aside} de lado não entra${data.aside === 1 ? '' : 'm'}` : '')
+    hint.textContent = MODEL_INFO[st.model][1]
+    body.querySelectorAll('.exp-choice button').forEach((b) => b.classList.toggle('on', st[b.dataset.k] === b.dataset.v))
+    go.disabled = n === 0
+    pv.className = 'exp-preview ' + st.format
+    pv.replaceChildren()
+    if (!n) { pv.append(elt('p', 'sheet-empty', 'Não há cartões escritos nesta leitura.')); return }
+    const total = blocksOf(data, st.model).length, MAX = 9
+    if (st.format === 'pdf') {
+      const page = elt('div', 'pv-page')
+      // miolo montado por toHtmlBody, que escapa todo o texto do usuário
+      page.innerHTML = toHtmlBody(data, st.model, MAX)
+      pv.append(page)
+    } else {
+      const text = renderExport(data, st.model, st.format)
+      pv.append(elt('pre', null, text.split('\n').slice(0, 22).join('\n')))
+    }
+    if (total > MAX) pv.append(elt('div', 'pv-more', '… o documento continua'))
+  }
+  sel.onchange = () => { st.src = sel.value; draw() }
+  go.onclick = async () => {
+    lsSet(EXP_KEY, JSON.stringify({ model: st.model, format: st.format }))
+    go.disabled = true
+    const done = await exportDocument(exportData(sources.find((x) => x.id === st.src)), st.model, st.format)
+    go.disabled = false
+    if (done) closeSheet()
+  }
+  draw()
+}
+
 const SHORTCUTS = [
   ['Na mesa', [
     ['Duplo clique no fundo ou N', 'novo cartão'],
@@ -1810,6 +1990,7 @@ const SHORTCUTS = [
     ['Encostar um cartão na borda de outro', 'agrupar; Shift + arrastar solta do grupo'],
     ['T', 'devolve o último cartão excluído'],
     ['E', 'abre o organizador'],
+    ['Ctrl+E', 'exporta um documento (PDF, TXT ou MD)'],
     ['Ctrl+S', 'faz um backup (.json)'],
     ['Ctrl+O', 'importa um backup (só acrescenta)'],
     ['F1', 'esta lista'],

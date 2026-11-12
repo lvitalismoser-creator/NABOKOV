@@ -136,6 +136,56 @@ test('instantâneo do disco aparece no menu e restaurar regrava o projeto.json',
   assert.ok(kept.some((t) => t.includes('e depois mudou')))
 })
 
+test('exportar TXT, MD e PDF pelo diálogo de salvar; cancelar não grava nada', async () => {
+  const { app, win } = await launch()
+  await win.keyboard.type('Primeira *cena* do livro')
+  await win.keyboard.press('Control+Enter')
+  // texto longo, para o PDF passar de uma página
+  await win.evaluate(() => navigator.clipboard?.writeText?.('').catch(() => {}))
+  for (let i = 0; i < 8; i++) { await win.keyboard.insertText('Parágrafo comprido para encher a página. '.repeat(12)); await win.keyboard.press('Enter') }
+  await win.keyboard.press('Escape')
+  const out = path.join(data, 'saida')
+  fs.mkdirSync(out)
+  const answer = (file) => app.evaluate(({ dialog }, f) => { dialog.showSaveDialog = async () => (f ? { canceled: false, filePath: f } : { canceled: true }) }, file)
+  const exportAs = async (format) => {
+    await win.keyboard.press('Control+e')
+    await win.click(`.exp-choice button[data-v="${format}"]`)
+    await win.click('.exp-choice button[data-v="corrido"]')
+    await win.click('#exp-go')
+  }
+  // cancelar: a janela continua aberta e nada é gravado
+  await answer(null)
+  await exportAs('txt'); await sleep(400)
+  assert.equal(await win.locator('#sheet').isVisible(), true)
+  assert.deepEqual(fs.readdirSync(out), [])
+  await win.keyboard.press('Escape')
+
+  await answer(path.join(out, 'livro.txt'))
+  await exportAs('txt')
+  await win.waitForSelector('#sheet', { state: 'hidden' })
+  const txt = fs.readFileSync(path.join(out, 'livro.txt'), 'utf8')
+  assert.ok(txt.startsWith('Primeira *cena* do livro\n\nParágrafo comprido'))
+  assert.match(await win.textContent('#toast'), /Exportei «livro\.txt» · está em .*saida/)
+  assert.equal(await win.textContent('#toast button'), 'mostrar na pasta')
+
+  await answer(path.join(out, 'livro'))            // sem extensão: o app completa
+  await exportAs('md')
+  await win.waitForSelector('#sheet', { state: 'hidden' })
+  assert.ok(fs.readFileSync(path.join(out, 'livro.md'), 'utf8').startsWith('Primeira *cena* do livro\n\n'))
+
+  await answer(path.join(out, 'livro.pdf'))
+  await exportAs('pdf')
+  await win.waitForSelector('#sheet', { state: 'hidden', timeout: 20000 })
+  const pdf = fs.readFileSync(path.join(out, 'livro.pdf'))
+  assert.equal(pdf.subarray(0, 5).toString(), '%PDF-')
+  assert.ok(pdf.length > 5000, 'pdf pequeno demais: ' + pdf.length)
+  const pages = pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []
+  assert.ok(pages.length >= 2, 'esperava 2 páginas ou mais, veio ' + pages.length)
+  assert.deepEqual(fs.readdirSync(out).sort(), ['livro.md', 'livro.pdf', 'livro.txt']) // sem .tmp esquecido
+  // exportar não mexe no projeto
+  assert.equal(readFile().cards.length, 2)
+})
+
 test('a segunda instância não abre', async () => {
   await launch()
   const electronBin = require('electron')

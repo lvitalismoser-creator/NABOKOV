@@ -3,7 +3,8 @@
  * Projeto em <userData>/cartoes/projeto.json, gravado de forma atômica
  * (arquivo temporário + fsync + rename, com retentativa no Windows),
  * com projeto.json.bak e instantâneos rotativos em snapshots/. */
-const { app, BrowserWindow, ipcMain, Menu } = require('electron')
+const { app, BrowserWindow, ipcMain, Menu, dialog, shell } = require('electron')
+const os = require('node:os')
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -104,6 +105,64 @@ ipcMain.handle('disk:snapshot', (e, rec) => fromApp(e) && safe(saveSnapshot)(rec
 const listSnapshots = () => snapFiles().map((t) => ({ t, n: readRec(path.join(SNAPS, t + '.json'))?.cards.length ?? -1 })).filter((s) => s.n >= 0)
 ipcMain.handle('disk:snapshots', (e) => (fromApp(e) ? safe(listSnapshots)() || [] : []))
 ipcMain.handle('disk:snapshotGet', (e, t) => (fromApp(e) && Number.isSafeInteger(t) ? safe(() => readRec(path.join(SNAPS, t + '.json')) || null)() || null : null))
+
+/* Exportar documento: a página manda o conteúdo pronto; o destino é sempre
+ * escolhido pelo usuário no diálogo de salvar. */
+const FILTERS = {
+  txt: [{ name: 'Texto', extensions: ['txt'] }],
+  md: [{ name: 'Markdown', extensions: ['md'] }],
+  pdf: [{ name: 'PDF', extensions: ['pdf'] }],
+}
+let lastExport = null
+const cleanName = (n) => path.basename(String(n || 'cartoes')).replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ').slice(0, 120)
+
+async function askWhere(name, ext) {
+  let dir
+  try { dir = lastExport ? path.dirname(lastExport) : app.getPath('documents') } catch { dir = os.homedir() }
+  const r = await dialog.showSaveDialog(win, {
+    title: 'Exportar', defaultPath: path.join(dir, cleanName(name)), filters: FILTERS[ext],
+  })
+  if (r.canceled || !r.filePath) return null
+  return path.extname(r.filePath) ? r.filePath : r.filePath + '.' + ext
+}
+const exported = (file) => { lastExport = file; return { ok: true, name: path.basename(file), dir: path.dirname(file) } }
+
+async function exportFile({ name, ext, text } = {}) {
+  if (!['txt', 'md'].includes(ext) || typeof text !== 'string') return { ok: false }
+  const file = await askWhere(name, ext)
+  if (!file) return { canceled: true }
+  writeAtomic(file, text)
+  return exported(file)
+}
+
+async function exportPdf({ name, html } = {}) {
+  if (typeof html !== 'string') return { ok: false }
+  const file = await askWhere(name, 'pdf')
+  if (!file) return { canceled: true }
+  // página escondida, sem scripts, só para paginar o HTML
+  const tmp = path.join(app.getPath('temp'), `cartoes-export-${process.pid}-${Date.now()}.html`)
+  fs.writeFileSync(tmp, html)
+  const w = new BrowserWindow({ show: false, webPreferences: { javascript: false, sandbox: true, contextIsolation: true, nodeIntegration: false } })
+  try {
+    await w.loadFile(tmp)
+    const pdf = await w.webContents.printToPDF({
+      pageSize: 'A4', printBackground: false,
+      margins: { top: 1, bottom: 1, left: 1.1, right: 1.1 }, // polegadas
+      displayHeaderFooter: true, headerTemplate: '<span></span>',
+      footerTemplate: '<div style="width:100%;text-align:center;font:9px Georgia,serif;color:#666"><span class="pageNumber"></span></div>',
+    })
+    writeAtomic(file, pdf)
+  } finally {
+    w.destroy()
+    fs.rmSync(tmp, { force: true })
+  }
+  return exported(file)
+}
+const safeAsync = (fn) => async (...a) => { try { return await fn(...a) } catch (e) { console.error('cartoes:', e); return { ok: false } } }
+ipcMain.handle('export:file', (e, d) => (fromApp(e) ? safeAsync(exportFile)(d) : { ok: false }))
+ipcMain.handle('export:pdf', (e, d) => (fromApp(e) ? safeAsync(exportPdf)(d) : { ok: false }))
+// só mostra o último arquivo exportado: a página não escolhe o caminho
+ipcMain.handle('export:reveal', (e) => { if (fromApp(e) && lastExport) shell.showItemInFolder(lastExport); return true })
 
 let win
 function createWindow() {

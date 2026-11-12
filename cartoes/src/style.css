@@ -453,6 +453,49 @@ body.is-empty #organize { opacity: .4; }
 .keys td:first-child { width: 42%; padding-right: 14px; }
 .keys kbd { font-size: 14px; color: var(--ink); }
 
+/* exportar */
+#sheet-body.exp { display: flex; gap: 26px; overflow: hidden; }
+.exp-opts { flex: none; width: 300px; display: flex; flex-direction: column; gap: 16px; }
+.exp-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.exp-label { font: italic 13px var(--serif); color: rgba(60, 45, 25, .6); margin-bottom: 5px; }
+.exp-info { margin-top: 5px; font-size: 13px; font-style: italic; color: rgba(60, 45, 25, .6); min-height: 19px; }
+#exp-src {
+  width: 100%; padding: 6px 8px; border: 0; border-radius: 3px; cursor: pointer;
+  background: rgba(255, 255, 255, .5); box-shadow: 0 0 0 .5px rgba(80, 60, 30, .35);
+  font: 15px var(--serif); color: var(--ink);
+}
+.exp-choice { display: flex; border-radius: 3px; box-shadow: 0 0 0 .5px rgba(80, 60, 30, .35); overflow: hidden; }
+.exp-choice button {
+  flex: 1; padding: 7px 4px; border: 0; cursor: pointer; white-space: nowrap;
+  background: rgba(255, 255, 255, .35); font: 14px var(--serif); color: rgba(60, 45, 25, .75);
+}
+.exp-choice button + button { box-shadow: -1px 0 0 rgba(80, 60, 30, .18); }
+.exp-choice button:hover { background: rgba(255, 255, 255, .7); }
+.exp-choice button.on { background: #3f6f9a; color: #fff; }
+.exp-acts { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 6px; }
+.sheet-box button.act.primary { background: #3f6f9a; color: #fff; font-style: normal; padding: 7px 16px; }
+.sheet-box button.act.primary:hover { background: #2a5a85; }
+.sheet-box button.act:disabled { opacity: .45; cursor: default; }
+.exp-preview {
+  flex: 1; min-height: 300px; max-height: 420px; overflow: hidden; position: relative;
+  border-radius: 2px; background: #fff; box-shadow: 0 0 0 .5px rgba(80, 60, 30, .3), 0 6px 14px -8px rgba(70, 50, 20, .5);
+}
+.exp-preview pre {
+  margin: 0; padding: 16px 18px; white-space: pre-wrap; overflow-wrap: anywhere;
+  font: 12.5px/1.5 ui-monospace, Consolas, "Courier New", monospace; color: #222;
+}
+.pv-page { padding: 26px 30px; font: 13px/1.6 var(--serif); color: #111; }
+.pv-page h1 { font-size: 19px; font-weight: 600; margin: 0 0 14px; }
+.pv-page h2 { font-size: 13px; font-weight: 600; font-style: italic; margin: 16px 0 4px; }
+.pv-page p { margin: 0 0 8px; }
+.pv-page p.note { font-size: 12px; font-style: italic; color: #444; margin-left: 16px; }
+.pv-more {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 34px 18px 10px;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), #fff 60%);
+  font: italic 13px var(--serif); color: rgba(60, 45, 25, .6); text-align: center;
+}
+@media (max-width: 760px) { #sheet-body.exp { flex-direction: column; overflow-y: auto; } .exp-opts { width: auto; } }
+
 /* ---------- pontinho de salvo: cinza = salvo, pisca ao gravar, vermelho se falhar ---------- */
 
 #saved {
