@@ -572,7 +572,7 @@ body.is-empty #organize { opacity: .4; }
 .sheet-box button.act.primary:hover { background: #2a5a85; }
 .sheet-box button.act:disabled { opacity: .45; cursor: default; }
 .exp-preview {
-  flex: 1; min-height: 300px; max-height: 420px; overflow: hidden; position: relative;
+  flex: 1; min-height: 300px; max-height: 420px; overflow: auto; scrollbar-width: thin; position: relative;
   border-radius: 2px; background: #fff; box-shadow: 0 0 0 .5px rgba(80, 60, 30, .3), 0 6px 14px -8px rgba(70, 50, 20, .5);
 }
 .exp-preview pre {
@@ -584,11 +584,6 @@ body.is-empty #organize { opacity: .4; }
 .pv-page h2 { font-size: 13px; font-weight: 600; font-style: italic; margin: 16px 0 4px; }
 .pv-page p { margin: 0 0 8px; }
 .pv-page p.note { font-size: 12px; font-style: italic; color: #444; margin-left: 16px; }
-.pv-more {
-  position: absolute; left: 0; right: 0; bottom: 0; padding: 34px 18px 10px;
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), #fff 60%);
-  font: italic 13px var(--serif); color: rgba(60, 45, 25, .6); text-align: center;
-}
 @media (max-width: 760px) { #sheet-body.exp { flex-direction: column; overflow-y: auto; } .exp-opts { width: auto; } }
 
 /* ---------- pontinho de salvo: cinza = salvo, pisca ao gravar, vermelho se falhar ---------- */
@@ -689,7 +684,14 @@ body.is-empty #organize { opacity: .4; }
 
 /* meio: leitura */
 .show-mid { flex: 1; min-height: 0; display: flex; align-items: center; gap: 8px; padding: 0 14px; }
-#stage { flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+/* a leitura nunca é cortada: o que não couber, rola (margin: auto centra sem esconder o topo) */
+#stage { flex: 1; min-width: 0; height: 100%; display: flex; overflow: auto; scrollbar-width: thin; scrollbar-color: rgba(243, 236, 215, .3) transparent; }
+#stage > * { margin: auto; }
+.org-zoom { display: flex; align-items: center; gap: 2px; }
+.show-top .org-zoom button { text-decoration: none; font-style: normal; padding: 4px 7px; border-radius: 3px; }
+.show-top .org-zoom button:hover { background: rgba(251, 246, 229, .14); }
+.show-top #org-zoom { font-style: italic; font-size: 13px; min-width: 64px; }
+.show-top #org-zoom.fixed { opacity: 1; }
 .stage-empty { max-width: 420px; text-align: center; font: italic 17px/1.5 var(--serif); opacity: .7; }
 .nav {
   flex: none; width: 52px; height: 52px; border-radius: 50%;
@@ -700,13 +702,14 @@ body.is-empty #organize { opacity: .4; }
 .nav:hover { background: rgba(251, 246, 229, .25); }
 .at-start #prev, .at-end #next { opacity: .25; pointer-events: none; }
 
-.slide { display: flex; flex-direction: column; align-items: center; gap: 14px; max-width: 100%; }
+.slide { display: flex; flex-direction: column; align-items: center; gap: 14px; flex: none; padding: 8px; }
 .slide.in-r { animation: sin-r .3s cubic-bezier(.2, .8, .25, 1) both; }
 .slide.in-l { animation: sin-l .3s cubic-bezier(.2, .8, .25, 1) both; }
 @keyframes sin-r { from { opacity: 0; transform: translateX(40px); } }
 @keyframes sin-l { from { opacity: 0; transform: translateX(-40px); } }
 .slide-cap { font: italic 14px var(--serif); opacity: .65; }
-.slide-row { display: flex; gap: 22px; align-items: flex-start; justify-content: center; flex-wrap: wrap; max-width: 100%; }
+.slide-row { display: flex; gap: 22px; align-items: flex-start; justify-content: center; flex-wrap: wrap; max-width: min(1180px, 100vw - 150px); }
+.notes-open .slide-row { max-width: min(1180px, 100vw - 460px); }
 .slide.aside .slide-row { opacity: .45; transform: translateY(-8px); }
 .slide-acts { display: flex; gap: 26px; font: italic 14px var(--serif); }
 .slide-acts button {
@@ -749,6 +752,9 @@ body.is-empty #organize { opacity: .4; }
   background-attachment: local;
 }
 .slide.multi .s-body p { min-height: 28px; }
+/* num grupo cada cartão mostra o texto todo (sem rolagem própria): o zoom e a rolagem são da leitura */
+.slide.multi .s-card { max-height: none; }
+.slide.multi .s-body { overflow: visible; }
 
 /* notas */
 #notes { display: none; flex: none; width: 290px; align-self: stretch; flex-direction: column; justify-content: center; gap: 22px; padding: 14px 6px 18px 10px; }

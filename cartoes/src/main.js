@@ -5,7 +5,7 @@ import { keymap } from 'prosemirror-keymap'
 import { history, undo, redo } from 'prosemirror-history'
 import { baseKeymap, toggleMark } from 'prosemirror-commands'
 import { inputRules, InputRule, undoInputRule } from 'prosemirror-inputrules'
-import { toTxt, toMd, toHtml, toHtmlBody, blocksOf, fileName } from './export.js'
+import { toTxt, toMd, toHtml, toHtmlBody, fileName } from './export.js'
 
 /* ------------------------------------------------------------------ *
  *  Schema mínimo: parágrafos, negrito e itálico. Nada além disso.
@@ -1524,23 +1524,42 @@ function layOut() {
   const used = new Set(list.flatMap((p) => p.cs))
   const rest = unitsFrom(live().filter((k) => !used.has(k))).map((u) => ({ cs: u, rest: true }))
   const M = 24, TOP = 64, GX = 30, GY = 34
+  // Um grupo da mesa é levado como um bloco: os cartões guardam a posição que têm uns em
+  // relação aos outros (coluna, 2×2, o que for). Só o que não é grupo na mesa (por exemplo,
+  // um grupo separado nesta ordem e reunido depois) é posto lado a lado.
+  const shape = (p) => {
+    const g0 = p.cs[0].g
+    if (p.cs.length > 1 && g0 && p.cs.every((k) => k.g === g0)) {
+      const r = rectOf(p.cs)
+      return { w: r.x1 - r.x0, h: r.y1 - r.y0, at: p.cs.map((k) => [k, k.x - r.x0, k.y - r.y0]) }
+    }
+    let x = 0
+    const at = p.cs.map((k) => { const row = [k, x, 0]; x += wOf(k) + GAP; return row })
+    return { w: x - GAP, h: Math.max(...p.cs.map(hOf)), at }
+  }
   const rows = []
   let row = [], x = M
   const flow = (arr) => {
     for (const p of arr) {
-      const w = p.cs.reduce((a, k) => a + wOf(k), 0) + (p.cs.length - 1) * GAP
-      if (row.length && x + w > Math.max(innerWidth, 1120) - M) { rows.push(row); row = []; x = M }
-      row.push([p, x]); x += w + GX
+      const sh = shape(p)
+      if (row.length && x + sh.w > Math.max(innerWidth, 1120) - M) { rows.push(row); row = []; x = M }
+      row.push([p, x, sh]); x += sh.w + GX
     }
     if (row.length) rows.push(row)
     row = []; x = M
   }
   flow(list)
   flow(rest)
-  // a mesa rola: as fileiras nunca se sobrepõem; cada uma tem a altura do seu maior cartão
+  // a mesa rola: as fileiras nunca se sobrepõem; cada uma tem a altura da sua peça mais alta
+  // (um grupo ganha o espaço da etiqueta dele em cima)
+  const TAB = 34
   const rowY = []
   let yy = TOP
-  for (const r of rows) { rowY.push(yy); yy += Math.max(...r.flatMap(([p]) => p.cs.map(hOf))) + GY }
+  for (const r of rows) {
+    const tab = r.some(([p]) => p.cs.length > 1) ? TAB : 0
+    rowY.push(yy + tab)
+    yy += tab + Math.max(...r.map(([, , sh]) => sh.h)) + GY
+  }
   // cada peça de vários cartões fica (ou vira) um grupo; o resto se solta
   for (const p of list) {
     let gid = null
@@ -1552,8 +1571,8 @@ function layOut() {
     p.cs.forEach((k) => { k.g = gid })
   }
   let n = 0
-  rows.forEach((r, ri) => r.forEach(([p, x0]) => p.cs.forEach((k, i) => {
-    k.x = x0 + p.cs.slice(0, i).reduce((a, m) => a + wOf(m) + GAP, 0); k.y = rowY[ri]; k.z = ++zTop
+  rows.forEach((r, ri) => r.forEach(([p, x0, sh]) => sh.at.forEach(([k, dx, dy]) => {
+    k.x = x0 + dx; k.y = rowY[ri] + dy; k.z = ++zTop
     if (k.stashed) { k.stashed = false; k.el.classList.remove('stashed') }
     place(k); measure(k)
     if (!p.rest) n++
@@ -1634,6 +1653,41 @@ function slideOf(p, i) {
   return wrap
 }
 
+/* Zoom da leitura no organizador. null = "ajustado": a peça inteira cabe na área de leitura
+ * (um grupo grande encolhe até caber). Um número fixa o zoom; o que passar da área, rola. */
+const ORG_ZMIN = 0.3, ORG_ZMAX = 2.5, ORG_FIT_MIN = 0.55
+let orgZoom = null
+const orgZoomBtn = document.getElementById('org-zoom')
+function fitStage() {
+  const s = stage.querySelector('.slide')
+  if (!s) { orgZoomBtn.textContent = 'ajustado'; return }
+  s.style.zoom = 1
+  let z = orgZoom
+  if (z == null) {
+    // tamanho natural da peça contra o espaço livre; nunca amplia sozinho
+    // (não encolhe abaixo de 55%, para a letra continuar legível: daí em diante, a leitura rola)
+    z = clamp(Math.min(1, (stage.clientWidth - 16) / s.scrollWidth, (stage.clientHeight - 16) / s.scrollHeight), ORG_FIT_MIN, 1)
+  }
+  s.style.zoom = z
+  s.dataset.zoom = z.toFixed(3)
+  orgZoomBtn.textContent = orgZoom == null ? (z < 0.995 ? `ajustado · ${Math.round(z * 100)}%` : 'ajustado') : Math.round(z * 100) + '%'
+  orgZoomBtn.classList.toggle('fixed', orgZoom != null)
+}
+function setOrgZoom(z) {
+  orgZoom = z == null ? null : clamp(Math.round(z * 20) / 20, ORG_ZMIN, ORG_ZMAX)
+  fitStage()
+}
+const curOrgZoom = () => Number(stage.querySelector('.slide')?.dataset.zoom) || 1
+orgZoomBtn.onclick = () => setOrgZoom(null)
+document.getElementById('org-zoom-out').onclick = () => setOrgZoom(curOrgZoom() - 0.1)
+document.getElementById('org-zoom-in').onclick = () => setOrgZoom(curOrgZoom() + 0.1)
+stage.addEventListener('wheel', (e) => {
+  if (!(e.ctrlKey || e.metaKey)) return // sem Ctrl, a roda rola a leitura
+  e.preventDefault()
+  setOrgZoom(curOrgZoom() * Math.exp(-e.deltaY * 0.0016))
+}, { passive: false })
+addEventListener('resize', () => { if (!show.hidden) fitStage() })
+
 function renderStage(dir) {
   if (!P.length) {
     const e = document.createElement('div')
@@ -1645,6 +1699,8 @@ function renderStage(dir) {
   const s = slideOf(P[idx], idx)
   if (dir) s.classList.add('in-' + dir)
   stage.replaceChildren(s)
+  stage.scrollTop = 0; stage.scrollLeft = 0
+  fitStage()
 }
 
 function chipFor(unit, extra = '') {
@@ -1742,6 +1798,7 @@ let notesOpen = lsGet('cartoes.ui.notas') === '1'
 function toggleNotes(v = !notesOpen) {
   notesOpen = v
   show.classList.toggle('notes-open', v)
+  fitStage()
   lsSet('cartoes.ui.notas', v ? '1' : '0')
   if (v) setTimeout(() => notePiece.focus(), 0)
 }
@@ -1863,6 +1920,9 @@ function orgKey(e) {
   if (e.ctrlKey || e.metaKey) {
     if (low === 'z' && !e.shiftKey) undoOrg()
     else if ((low === 'z' && e.shiftKey) || low === 'y') redoOrg()
+    else if (k === '+' || k === '=') setOrgZoom(curOrgZoom() + 0.1)
+    else if (k === '-') setOrgZoom(curOrgZoom() - 0.1)
+    else if (k === '0') setOrgZoom(null)
     else if (low === 's') saveOrder()
     else return
   } else if (e.altKey) {
@@ -2307,7 +2367,7 @@ function openExport() {
   acts.append(go, cancel)
   left.append(acts)
 
-  right.append(elt('div', 'exp-label', 'pré-visualização (começo do documento)'))
+  right.append(elt('div', 'exp-label', 'pré-visualização (o documento inteiro; role para ver)'))
   const pv = elt('div', 'exp-preview'); pv.id = 'exp-preview'
   right.append(pv)
   body.append(left, right)
@@ -2323,17 +2383,16 @@ function openExport() {
     pv.className = 'exp-preview ' + st.format
     pv.replaceChildren()
     if (!n) { pv.append(elt('p', 'sheet-empty', 'Não há cartões escritos nesta leitura.')); return }
-    const total = blocksOf(data, st.model).length, MAX = 9
+    // o documento inteiro, com rolagem: o que se vê aqui é o que vai para o arquivo
     if (st.format === 'pdf') {
       const page = elt('div', 'pv-page')
       // miolo montado por toHtmlBody, que escapa todo o texto do usuário
-      page.innerHTML = toHtmlBody(data, st.model, MAX)
+      page.innerHTML = toHtmlBody(data, st.model)
       pv.append(page)
     } else {
-      const text = renderExport(data, st.model, st.format)
-      pv.append(elt('pre', null, text.split('\n').slice(0, 22).join('\n')))
+      pv.append(elt('pre', null, renderExport(data, st.model, st.format)))
     }
-    if (total > MAX) pv.append(elt('div', 'pv-more', '… o documento continua'))
+    pv.scrollTop = 0
   }
   sel.onchange = () => { st.src = sel.value; draw() }
   go.onclick = async () => {
@@ -2380,6 +2439,7 @@ const SHORTCUTS = [
     ['← →', 'ler a peça anterior · a próxima'],
     ['Alt + ← →', 'mover a peça'],
     ['↑ · ↓', 'pôr de lado · devolver à leitura'],
+    ['Ctrl + roda · Ctrl + e Ctrl − · Ctrl+0', 'zoom da leitura · voltar ao ajustado (a peça inteira cabe)'],
     ['R', 'embaralhar'],
     ['C', 'notas'],
     ['Ctrl+S', 'salvar a ordem com um nome'],
