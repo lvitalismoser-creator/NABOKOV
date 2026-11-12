@@ -122,6 +122,17 @@ body.showing #zoom { visibility: hidden; }
 }
 .card:hover .grip, .card.dragging .grip { opacity: 1; }
 
+/* Exceção registrada no "Conceito do cartão": só no cartão com foco, a moldura (a faixa
+   por onde se arrasta) fica levemente visível. Fora do foco nada aparece. */
+.paper::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 27px;
+  background: rgba(104, 78, 40, .07);
+  opacity: 0; transition: opacity .25s; pointer-events: none;
+}
+.card:focus-within .paper::after { opacity: 1; }
+.card:focus-within .grip { opacity: .75; }
+body.map .paper::after { display: none; }
+
 .tools {
   position: absolute; top: 4px; right: 6px; z-index: 2;
   display: flex; align-items: center; gap: 8px; height: 22px;
@@ -130,21 +141,22 @@ body.showing #zoom { visibility: hidden; }
 .card:hover .sizes { opacity: 1; }
 .sizes button {
   min-width: 12px; padding: 0; border: 0; background: none; cursor: pointer;
-  font: italic 12px/22px var(--serif); color: rgba(90, 70, 40, .5);
+  font: italic 12.5px/22px var(--serif); color: rgba(90, 70, 40, .62);
 }
+.sizes button { min-width: 14px; }
 .sizes button:hover { color: var(--ink); }
 .sizes button.on { color: rgba(60, 45, 25, .9); font-weight: 600; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; }
 .card[data-s="p"] .stash span { display: none; }
 .card[data-s="p"] .grip { display: none; }
 .close {
-  width: 22px; height: 22px; padding: 0;
+  width: 24px; height: 24px; padding: 0; border-radius: 3px;
   border: 0; background: none; cursor: pointer;
   font: 400 19px/20px var(--serif);
   color: rgba(90, 70, 40, .5);
   opacity: 0; transition: opacity .2s, color .15s;
 }
 .card:hover .close { opacity: 1; }
-.close:hover { color: #b5483a; }
+.close:hover { color: #b5483a; background: rgba(181, 72, 58, .1); }
 
 /* ---------- texto ---------- */
 
@@ -260,8 +272,8 @@ body.is-empty #empty { display: flex; }
 .cats button {
   --cc: #6b5a3a;
   padding: 0; border: 0; background: none; cursor: pointer;
-  font: italic 12px/20px var(--serif); letter-spacing: .02em;
-  color: rgba(90, 70, 40, .6);
+  font: italic 12.5px/20px var(--serif); letter-spacing: .02em;
+  color: rgba(90, 70, 40, .68);
   opacity: 0; pointer-events: none;
   transition: opacity .2s, color .15s;
 }
@@ -281,8 +293,8 @@ body.is-empty #empty { display: flex; }
   height: 22px; padding: 0 2px;
   display: flex; align-items: center; gap: 4px;
   border: 0; background: none; cursor: pointer;
-  font: italic 12px/22px var(--serif);
-  color: rgba(63, 111, 154, .85);
+  font: italic 12.5px/22px var(--serif);
+  color: rgba(63, 111, 154, .95);
   opacity: 0; transition: opacity .2s, color .15s;
 }
 .card:hover .stash { opacity: 1; }

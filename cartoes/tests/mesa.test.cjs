@@ -538,3 +538,27 @@ test('modo mapa: arrasta-se o cartão por qualquer ponto; seleção funciona; en
   assert.deepEqual(errors, [])
   await ctx.close()
 })
+
+/* ---------------- Fase 8: o que é clicável ---------------- */
+test('moldura: invisível fora do foco, levemente visível só no cartão com foco; mão de arrastar; controles com rótulo', async () => {
+  const { ctx, page, errors } = await open(DOIS)
+  const band = (text) => page.locator('.card', { hasText: text }).locator('.paper').evaluate((e) => getComputedStyle(e, '::after').opacity)
+  const grip = (text) => page.locator('.card', { hasText: text }).locator('.grip').evaluate((e) => getComputedStyle(e).opacity)
+  await page.mouse.move(5, 5); await sleep(350)
+  assert.equal(await band('alfa'), '0'); assert.equal(await grip('alfa'), '0') // zero poluição por padrão
+  await page.locator('.card', { hasText: 'alfa' }).locator('.ProseMirror').click()
+  await page.mouse.move(5, 5); await sleep(400)
+  assert.equal(await band('alfa'), '1'); assert.ok(Number(await grip('alfa')) > 0.5)
+  assert.equal(await band('beta'), '0'); assert.equal(await grip('beta'), '0') // só o do foco
+  assert.equal(await page.locator('.card .paper').first().evaluate((e) => getComputedStyle(e).cursor), 'grab')
+  assert.equal(await page.locator('.card .scroll').first().evaluate((e) => getComputedStyle(e).cursor), 'text')
+  // todo controle do cartão diz o que faz e tem alvo de pelo menos 20 px de altura
+  const ctl = await page.$$eval('.card:first-child .cats button, .card:first-child .sizes button, .card:first-child .stash, .card:first-child .close',
+    (els) => els.map((e) => ({ t: e.title, h: e.getBoundingClientRect().height })))
+  assert.equal(ctl.length, 8)
+  for (const c of ctl) { assert.ok(c.t.length > 5, 'sem rótulo'); assert.ok(c.h >= 20, 'alvo baixo: ' + c.h) }
+  await page.keyboard.press('Escape'); await sleep(400)
+  assert.equal(await band('alfa'), '0')
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})

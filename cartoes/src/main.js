@@ -476,12 +476,12 @@ function createCard(data = {}, { focus = false, animate = false } = {}) {
     <div class="tilt">
       <i class="under u3"></i><i class="under u2"></i><i class="under u1"></i>
       <div class="paper">
-        <span class="grip"></span>
-        <span class="cats">${CATS.map((k) => `<button tabindex="-1" data-cat="${k}">${CAT_LABEL[k]}</button>`).join('')}</span>
+        <span class="grip" title="Arraste por esta faixa para mover o cartão"></span>
+        <span class="cats">${CATS.map((k) => `<button tabindex="-1" data-cat="${k}" title="Marcar como ${CAT_LABEL[k].toLowerCase()} (clique de novo para tirar)">${CAT_LABEL[k]}</button>`).join('')}</span>
         <span class="tools">
-          <span class="sizes" title="Tamanho do cartão (Alt+1, Alt+2, Alt+3)">${Object.keys(SIZES).map((k) => `<button tabindex="-1" data-s="${k}" aria-label="Tamanho ${SIZE_LABEL[k]}">${SIZE_LABEL[k]}</button>`).join('')}</span>
+          <span class="sizes">${Object.keys(SIZES).map((k) => `<button tabindex="-1" data-s="${k}" aria-label="Tamanho ${SIZE_LABEL[k]}" title="Tamanho ${{ p: 'pequeno', m: 'médio', g: 'grande' }[k]} (Alt+${{ p: 1, m: 2, g: 3 }[k]})">${SIZE_LABEL[k]}</button>`).join('')}</span>
           <button class="stash" tabindex="-1" title="Guardar na gaveta (não exclui)">${TRAY}<span>guardar</span></button>
-          <button class="close" tabindex="-1" aria-label="Excluir cartão" title="Excluir">×</button>
+          <button class="close" tabindex="-1" aria-label="Excluir cartão" title="Excluir (vai para a lixeira; dá para desfazer)">×</button>
         </span>
         <div class="scroll"><div class="mount"></div></div>
         <div class="mapface" aria-hidden="true"></div>
