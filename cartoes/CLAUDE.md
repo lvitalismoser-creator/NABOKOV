@@ -128,7 +128,7 @@ npm run test:electron # app desktop; isolado por CARTOES_DATA_DIR (arquivo e per
 - `tests/mesa.test.cjs`: arrasto, ímã, grupos, criação de cartões; câmera (deslocar, zoom no cursor, Ctrl+0/Ctrl+1, posições do mundo com zoom), janela menor (I1), roda sobre cartão com texto, grupo e gaveta (I2/I3).
 - `tests/export.test.cjs`: conteúdo de cada modelo e formato, escapes, janela Exportar e download.
 - Depois de `goto`, espere `.ProseMirror-focused` antes de digitar: a inicialização é assíncrona e teclas antes disso caem nos atalhos globais.
-- `seed()` (em `tests/helpers.cjs`) marca a primeira carga em `window.name`. Um `addInitScript` que toca no `localStorage` num recarregamento rápido enxerga o armazenamento vazio e faz a página perder o que acabou de gravar (só no Playwright; sem script de preparação o app não perde nada). Não leia nem grave `localStorage` em `addInitScript` depois da primeira carga.
+- `seed()` (em `tests/helpers.cjs`) grava os dados iniciais abrindo antes `tests/blank.html` (mesma origem `file://`). Não use `addInitScript` para ler ou gravar `localStorage`: num recarregamento rápido ele enxerga o armazenamento vazio e a página perde o que acabou de gravar (só no Playwright; sem script de preparação o app não perde nada, conferido em 40 recargas imediatas).
 - Nunca rode testes sem `CARTOES_DATA_DIR` no Electron: sem isso eles gravam no perfil real do usuário.
 - Num contêiner Linux como root: `ELECTRON_DISABLE_SANDBOX=1 xvfb-run -a npm test` (sem isso o teste da segunda instância falha, porque o Electron não abre como root). Se o Playwright do `package.json` não casar com o Chromium já instalado, `npm i --no-save playwright@<versão instalada>` resolve sem mexer no `package.json`.
 

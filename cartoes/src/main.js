@@ -84,6 +84,9 @@ function emptyDoc() {
  * ------------------------------------------------------------------ */
 const CAM_KEY = DEMO_MODE ? 'cartoes.demo.cam' : 'cartoes.ui.cam'
 const ZMIN = 0.2, ZMAX = 2
+// modo mapa: abaixo deste zoom o texto não se lê; cada cartão mostra só as primeiras palavras, grandes
+const MAP_Z = 0.45
+let mapMode = false
 const cam = { x: 0, y: 0, z: 1 }
 const zoomBtn = document.getElementById('zoom')
 let camTimer, glideTimer
@@ -96,8 +99,9 @@ function applyCam({ glide = false } = {}) {
   world.classList.toggle('gliding', glide)
   if (glide) glideTimer = setTimeout(() => world.classList.remove('gliding'), 360)
   world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.z})`
+  if ((cam.z < MAP_Z) !== mapMode) setMap(cam.z < MAP_Z)
   zoomBtn.hidden = cam.z === 1
-  zoomBtn.textContent = Math.round(cam.z * 100) + '%'
+  zoomBtn.textContent = Math.round(cam.z * 100) + '%' + (mapMode ? ' · mapa' : '')
   clearTimeout(camTimer)
   camTimer = setTimeout(() => lsSet(CAM_KEY, JSON.stringify(cam)), 250)
 }
@@ -107,6 +111,23 @@ function loadCam() {
     if (c && [c.x, c.y, c.z].every(Number.isFinite)) Object.assign(cam, { x: c.x, y: c.y, z: c.z })
   } catch {}
   applyCam()
+}
+function setMap(on) {
+  mapMode = on
+  document.body.classList.toggle('map', on)
+  if (!on) return
+  document.activeElement?.blur?.() // no mapa não se escreve
+  cards.forEach(paintMap)
+}
+function paintMap(c) {
+  c.el.querySelector('.mapface').textContent = firstWords(c, 8)
+}
+/* Clicar num cartão no mapa aproxima até ele, a 100%. */
+function zoomToCard(c) {
+  cam.z = 1
+  cam.x = innerWidth / 2 - (c.x + wOf(c) / 2)
+  cam.y = innerHeight / 2 - (c.y + hOf(c) / 2)
+  applyCam({ glide: true })
 }
 const toWorld = (sx, sy) => [(sx - cam.x) / cam.z, (sy - cam.y) / cam.z]
 /* Pedaço do mundo que a janela mostra. */
@@ -463,6 +484,7 @@ function createCard(data = {}, { focus = false, animate = false } = {}) {
           <button class="close" tabindex="-1" aria-label="Excluir cartão" title="Excluir">×</button>
         </span>
         <div class="scroll"><div class="mount"></div></div>
+        <div class="mapface" aria-hidden="true"></div>
       </div>
     </div>`
   c.el = el
@@ -507,11 +529,12 @@ function createCard(data = {}, { focus = false, animate = false } = {}) {
     scrollThreshold: { top: 4, bottom: 40, left: 0, right: 0 },
     dispatchTransaction(tr) {
       c.view.updateState(c.view.state.apply(tr))
-      if (tr.docChanged) { c.docJ = null; save(); measure(c) }
+      if (tr.docChanged) { c.docJ = null; save(); measure(c); if (mapMode) paintMap(c) }
     },
   })
 
   wire(c)
+  if (mapMode) paintMap(c)
   cards.set(c.id, c)
   world.appendChild(el)
   measure(c)
@@ -765,6 +788,7 @@ function startDrag(c, e, host) {
     } else if (host === c.el) {
       // clique sem arrastar: com Shift/Ctrl entra ou sai da seleção; sem, põe o cursor no cartão
       if (mod) toggleSel(c)
+      else if (mapMode) { clearSel(); zoomToCard(c) }
       else { clearSel(); c.view.focus() }
     }
   }
@@ -888,13 +912,16 @@ function wire(c) {
 
   // arrastar pela moldura (faixa de cima e margens), nunca pelo texto
   el.addEventListener('mousedown', (e) => {
+    if (mapMode) { e.preventDefault(); e.stopPropagation(); return } // no mapa o cartão inteiro é "moldura"
     // clique de seleção no texto: o editor nem fica sabendo (não move o cursor nem tira o foco de onde está)
     if (e.target.closest('.scroll') && selClick(e, c)) { e.preventDefault(); e.stopPropagation(); return }
     // só o texto recebe foco: a moldura e os botões do cartão não tiram o cursor de onde está
     if (!e.target.closest('.scroll')) e.preventDefault()
   }, true)
   el.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || e.target.closest('.close, .stash, .cats, .sizes')) return
+    if (e.button !== 0) return
+    if (mapMode) { startDrag(c, e, el); return }
+    if (e.target.closest('.close, .stash, .cats, .sizes')) return
     if (e.target.closest('.scroll')) {
       if (selClick(e, c)) { if (!blocked()) toggleSel(c) } else clearSel()
       return
@@ -2324,6 +2351,7 @@ const SHORTCUTS = [
     ['Arrastar o fundo · roda do mouse', 'mover a mesa'],
     ['Ctrl + roda · Ctrl + e Ctrl −', 'zoom'],
     ['Ctrl+0 · Ctrl+1', 'ver todos os cartões · voltar a 100%'],
+    ['Zoom abaixo de 45%', 'modo mapa: só as primeiras palavras; clicar num cartão aproxima até ele'],
     ['Shift + arrastar no fundo', 'seleciona os cartões dentro da caixa'],
     ['Shift ou Ctrl + clique num cartão', 'põe ou tira da seleção; arrastar um selecionado move todos'],
     ['Delete · Esc (com seleção)', 'exclui os selecionados · solta a seleção'],

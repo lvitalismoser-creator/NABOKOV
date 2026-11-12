@@ -329,6 +329,25 @@ body.is-empty #empty { display: flex; }
 }
 .card.snapped { transition: transform .1s ease-out; }
 
+/* ---------- modo mapa (zoom abaixo de 45%): primeiras palavras grandes + cor da categoria ---------- */
+
+.mapface { display: none; }
+body.map .mapface {
+  display: block; position: absolute; inset: 32px 0 0; padding: 6px 20px 0; overflow: hidden;
+  font: 600 44px/1.12 var(--serif); letter-spacing: -.01em; color: var(--ink);
+  overflow-wrap: anywhere; pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 72%, transparent);
+          mask-image: linear-gradient(to bottom, #000 72%, transparent);
+}
+body.map .card[data-s="p"] .mapface { font-size: 36px; padding: 4px 14px 0; }
+body.map .card[data-s="g"] .mapface { font-size: 54px; }
+body.map .scroll, body.map .cats, body.map .tools, body.map .grip, body.map .gtab { visibility: hidden; }
+body.map .paper { cursor: zoom-in; }
+/* a linha vermelha da ficha vira uma faixa na cor da categoria */
+body.map .card[data-cat="cena"]  .paper::before { top: 0; height: 28px; background: #b5483a; opacity: .85; }
+body.map .card[data-cat="nota"]  .paper::before { top: 0; height: 28px; background: #3f6f9a; opacity: .85; }
+body.map .card[data-cat="lugar"] .paper::before { top: 0; height: 28px; background: #4d7a4f; opacity: .85; }
+
 /* ---------- seleção múltipla ---------- */
 
 .card.selected .paper {

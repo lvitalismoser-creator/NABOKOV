@@ -475,3 +475,66 @@ test('seleção: excluir, guardar e tamanho em lote, cada um com desfazer', asyn
   assert.deepEqual(errors, [])
   await ctx.close()
 })
+
+/* ---------------- Fase 7b: modo mapa ---------------- */
+async function zoomOut(page, x = 640, y = 400) {
+  await page.mouse.move(x, y)
+  await page.keyboard.down('Control'); await page.mouse.wheel(0, 700); await page.keyboard.up('Control')
+  await sleep(100)
+}
+
+test('modo mapa: abaixo de 45% cada cartão mostra as primeiras palavras e a cor da categoria; clicar aproxima', async () => {
+  const MAPA = [card('a', 100, 120, 'A chuva começa antes de o personagem acordar e não para mais', { cat: 'cena' }), card('b', 700, 420, 'beta')]
+  const { ctx, page, errors } = await open(MAPA)
+  const antes = await ls(page, 'cartoes.v1')
+  assert.equal(await page.locator('.mapface').first().isVisible(), false)
+  assert.equal(await page.evaluate(() => document.body.classList.contains('map')), false)
+  await zoomOut(page)
+  const z = (await camOf(page)).z
+  assert.ok(z < 0.45, 'zoom ' + z)
+  assert.equal(await page.evaluate(() => document.body.classList.contains('map')), true)
+  const face = page.locator('.card', { hasText: 'A chuva' }).locator('.mapface')
+  assert.equal(await face.isVisible(), true)
+  assert.equal(await face.textContent(), 'A chuva começa antes de o personagem acordar…')
+  assert.ok(await face.evaluate((e) => parseFloat(getComputedStyle(e).fontSize)) * z >= 13, 'letra legível no mapa')
+  assert.equal(await page.locator('.card .scroll').first().isVisible(), false) // o texto miúdo some
+  assert.equal(await page.locator('.card', { hasText: 'A chuva' }).locator('.paper').evaluate((e) => getComputedStyle(e, '::before').backgroundColor), 'rgb(181, 72, 58)')
+  assert.match(await page.textContent('#zoom'), /% · mapa$/)
+  // clicar no cartão (em qualquer ponto) aproxima até ele, a 100%, sem pôr o cursor nem mexer nos dados
+  const b = await box(page, 'beta')
+  await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2); await sleep(500)
+  assert.equal((await camOf(page)).z, 1)
+  assert.equal(await page.evaluate(() => document.body.classList.contains('map')), false)
+  const nb = await box(page, 'beta')
+  assert.ok(near(nb.x + nb.width / 2, 640, 2) && near(nb.y + nb.height / 2, 400, 2), 'centrado: ' + JSON.stringify(nb))
+  assert.equal(await page.locator('.card .scroll').first().isVisible(), true)
+  await page.evaluate(() => dispatchEvent(new Event('pagehide')))
+  assert.equal(await ls(page, 'cartoes.v1'), antes)
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
+
+test('modo mapa: arrasta-se o cartão por qualquer ponto; seleção funciona; entrar no mapa tira o cursor sem perder texto', async () => {
+  const { ctx, page, errors } = await open(DOIS)
+  await page.locator('.card', { hasText: 'alfa' }).locator('.ProseMirror').click()
+  await page.keyboard.press('End'); await page.keyboard.type(' com mais texto')
+  await zoomOut(page)
+  const z = (await camOf(page)).z
+  assert.equal(await page.locator('.ProseMirror-focused').count(), 0)
+  assert.equal(await page.locator('.card', { hasText: 'alfa' }).locator('.mapface').textContent(), 'alfa com mais texto')
+  let s = await saved(page)
+  const x0 = s.b.x, y0 = s.b.y
+  const b = await box(page, 'beta')
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height * 0.6); await page.mouse.down() // no meio do "texto"
+  await page.mouse.move(b.x + b.width / 2 + 60, b.y + b.height * 0.6 + 30, { steps: 8 }); await page.mouse.up()
+  s = await saved(page)
+  assert.ok(near(s.b.x, x0 + 60 / z, 1.5) && near(s.b.y, y0 + 30 / z, 1.5), JSON.stringify([s.b.x, s.b.y, z]))
+  assert.equal((await camOf(page)).z, z)           // arrastar não é clique: continua no mapa
+  const a = await box(page, 'alfa')
+  await page.keyboard.down('Shift'); await page.mouse.click(a.x + a.width / 2, a.y + a.height / 2); await page.keyboard.up('Shift')
+  assert.equal(await page.locator('.card.selected').count(), 1)
+  assert.equal((await camOf(page)).z, z)
+  assert.match(JSON.stringify(s.a.doc), /alfa com mais texto/)
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
