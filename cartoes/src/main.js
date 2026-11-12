@@ -1212,7 +1212,7 @@ function saneOrg(o) {
     for (const it of x.items) {
       if (!it || !Array.isArray(it.ids)) continue
       const ids = it.ids.filter((id) => str(id) && !seen.has(id) && seen.add(id))
-      if (ids.length) items.push({ ids, aside: it.aside === true })
+      if (ids.length) items.push({ ids, aside: it.aside === true, ...(it.split === true && { split: true }) })
     }
     const notes = {}
     if (x.notes && typeof x.notes === 'object') {
@@ -1372,12 +1372,39 @@ function setAside(i, v) {
   touch(); render()
 }
 
+/* A ordem em teste acompanha os grupos da mesa: quem foi agrupado depois de a ordem existir
+ * vira uma peça só, e quem foi desagrupado vira peças soltas. Peças que o usuário separou de
+ * propósito nesta ordem (`split`) ficam como estão. Ordens com nome nunca são alteradas. */
+function syncGroups(o) {
+  if (o.name) return
+  const placed = new Set()
+  const items = []
+  let changed = false
+  for (const it of o.items) {
+    if (it.split) { items.push(it); continue }
+    for (const id of it.ids) {
+      if (placed.has(id)) continue
+      const g = cards.get(id)?.g
+      let ids = [id]
+      if (g) {
+        const mates = new Set(o.items.filter((x) => !x.split).flatMap((x) => x.ids).filter((m) => cards.get(m)?.g === g))
+        ids = reading([...mates].map((m) => cards.get(m))).map((k) => k.id)
+      }
+      ids.forEach((m) => placed.add(m))
+      const same = it.ids.length === ids.length && it.ids.every((m, n) => m === ids[n])
+      if (!same) changed = true
+      items.push(same ? it : { ids, aside: it.aside })
+    }
+  }
+  if (changed) { o.items = items; o.updatedAt = Date.now(); save() }
+}
+
 function splitPiece(i) {
   const p = P[i]
   if (!p || p.it.ids.length < 2) return
   remember()
   const o = curOrder()
-  o.items.splice(o.items.indexOf(p.it), 1, ...p.it.ids.map((id) => ({ ids: [id], aside: p.it.aside })))
+  o.items.splice(o.items.indexOf(p.it), 1, ...p.it.ids.map((id) => ({ ids: [id], aside: p.it.aside, split: true })))
   touch(); render()
   say('Grupo separado só nesta ordem; na mesa ele continua junto')
 }
@@ -1911,6 +1938,7 @@ function openOrg() {
     o = setUnnamed(itemsOf(units))
     past = [] // a ordem inicial não é algo a desfazer
   }
+  syncGroups(o)
   if (!piecesOf(o).length && !trayUnits(o).length) { say('Escreva em algum cartão antes de organizar'); return }
   document.activeElement?.blur?.()
   idx = 0
