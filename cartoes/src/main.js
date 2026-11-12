@@ -1531,6 +1531,18 @@ function orgKey(e) {
 }
 
 addEventListener('keydown', (e) => {
+  // folhas e menu ficam por cima de tudo: Esc fecha, o resto não passa para a mesa
+  if (!sheet.hidden) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSheet() }
+    else if (!e.target.closest?.('#sheet')) e.stopPropagation()
+    return
+  }
+  if (e.key === 'F1') { e.preventDefault(); e.stopPropagation(); openShortcuts(); return }
+  if (!menu.hidden) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(); menuBtn.focus(); return }
+    if (e.target.closest?.('#menu')) return
+    closeMenu()
+  }
   if (!show.hidden) { orgKey(e); return }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
     const m = e.key.toLowerCase()
@@ -1608,31 +1620,231 @@ function importJSON() {
   inp.click()
 }
 
-/* Recuperação por instantâneo (sem interface por enquanto): no console,
- *   await cartoes.snapshots()   → lista
- *   await cartoes.restore(t)    → volta ao instantâneo t (o estado atual vira instantâneo antes) */
+/* Instantâneos: lista o que há no IndexedDB e, no app desktop, também em disco.
+ * Restaurar nunca destrói: o estado de agora vira um instantâneo antes. */
+async function listSnapshots() {
+  const by = new Map()
+  for (const s of await idbSnapList()) by.set(s.savedAt, { t: s.savedAt, n: s.cards?.length || 0, rec: s })
+  if (disk?.snapshots) {
+    try { for (const d of (await disk.snapshots()) || []) if (!by.has(d.t)) by.set(d.t, { t: d.t, n: d.n, rec: null }) } catch {}
+  }
+  return [...by.values()].sort((a, b) => b.t - a.t)
+}
+
+async function restoreSnapshot(t) {
+  if (readOnly) return 'Esta aba é somente leitura'
+  const hit = (await listSnapshots()).find((s) => s.t === t)
+  let snap = hit?.rec || null
+  if (hit && !snap) { try { snap = await disk.snapshotGet(t) } catch { snap = null } }
+  if (!snap || !Array.isArray(snap.cards)) return 'Instantâneo não encontrado'
+  // o estado de agora vira um instantâneo antes, para dar para voltar
+  const cur = { savedAt: Date.now(), cards: [...cards.values()].map(snapshotOf), trash, org }
+  flush()
+  await idbSnap(cur)
+  if (disk) { try { await disk.snapshot(cur) } catch {} }
+  ready = false // impede que o pagehide do reload regrave o estado antigo por cima
+  await idbChain
+  // a hora é tirada só agora: precisa ser mais nova que qualquer gravação já feita
+  const rec = { savedAt: Date.now() + 2, cards: snap.cards, trash: snap.trash || [], org: saneOrg(snap.org) }
+  await idbPut(rec)
+  lsSet(STORE, JSON.stringify(rec.cards)); lsSet(STORE + '.t', String(rec.savedAt)); lsSet(TRASH_KEY, JSON.stringify(rec.trash))
+  lsSet(ORG_KEY, JSON.stringify(rec.org))
+  if (disk) { try { await disk.save(rec) } catch {} }
+  location.reload()
+  return 'Restaurando…'
+}
+
+const docText = (d) => (d?.content || []).map((p) => (p.content || []).map((t) => t.text).join('')).join(' ').replace(/\s+/g, ' ').trim()
+
 window.cartoes = {
   export: exportJSON,
   import: importCards,
-  trash: () => trash.map((d) => ({ id: d.id, em: new Date(d.deletedAt).toLocaleString(), texto: (d.doc?.content || []).map((p) => (p.content || []).map((t) => t.text).join('')).join(' ').slice(0, 60) })),
+  trash: () => trash.map((d) => ({ id: d.id, em: new Date(d.deletedAt).toLocaleString(), texto: docText(d.doc).slice(0, 60) })),
   reopen: (id) => reviveFromTrash(id),
   ordens: () => JSON.parse(JSON.stringify(org)),
-  snapshots: async () => (await idbSnapList()).map((s) => ({ t: s.savedAt, quando: new Date(s.savedAt).toLocaleString(), cartoes: s.cards.length })),
-  restore: async (t) => {
-    if (readOnly) return 'Esta aba é somente leitura'
-    const snap = (await idbSnapList()).find((s) => s.savedAt === t)
-    if (!snap) return 'Instantâneo não encontrado'
-    const now = Date.now()
-    flush()
-    await idbSnap({ savedAt: now, cards: [...cards.values()].map(snapshotOf), trash, org })
-    ready = false // impede que o pagehide do reload regrave o estado antigo por cima
-    const rec = { savedAt: now + 1, cards: snap.cards, trash: snap.trash || [], org: saneOrg(snap.org) }
-    await idbPut(rec)
-    lsSet(STORE, JSON.stringify(rec.cards)); lsSet(STORE + '.t', String(rec.savedAt)); lsSet(TRASH_KEY, JSON.stringify(rec.trash))
-    lsSet(ORG_KEY, JSON.stringify(rec.org))
-    location.reload()
-    return 'Restaurando…'
-  },
+  snapshots: async () => (await listSnapshots()).map((s) => ({ t: s.t, quando: new Date(s.t).toLocaleString(), cartoes: s.n })),
+  restore: restoreSnapshot,
+}
+
+/* ------------------------------------------------------------------ *
+ *  Menu ≡ e folhas (lixeira, instantâneos, atalhos)
+ * ------------------------------------------------------------------ */
+const menuBtn = document.getElementById('menu-btn')
+const menu = document.getElementById('menu')
+const sheet = document.getElementById('sheet')
+const sheetBody = document.getElementById('sheet-body')
+const elt = (tag, cls, text) => {
+  const e = document.createElement(tag)
+  if (cls) e.className = cls
+  if (text != null) e.textContent = text
+  return e
+}
+
+const MENU = [
+  { label: 'Importar backup…', key: 'Ctrl+O', run: () => importJSON() },
+  { label: 'Fazer backup (.json)', key: 'Ctrl+S', run: () => exportJSON() },
+  null,
+  { label: () => (trash.length ? `Lixeira (${trash.length})` : 'Lixeira'), key: 'T devolve o último', run: () => openTrash() },
+  { label: 'Instantâneos', key: '', run: () => openSnapshots() },
+  null,
+  { label: 'Atalhos', key: 'F1', run: () => openShortcuts() },
+]
+
+function openMenu() {
+  menu.replaceChildren()
+  for (const it of MENU) {
+    if (!it) { menu.append(elt('hr')); continue }
+    const b = elt('button')
+    b.setAttribute('role', 'menuitem')
+    b.append(elt('span', null, typeof it.label === 'function' ? it.label() : it.label), elt('kbd', null, it.key))
+    b.onclick = () => { closeMenu(); it.run() }
+    menu.append(b)
+  }
+  menu.hidden = false
+  menuBtn.setAttribute('aria-expanded', 'true')
+}
+function closeMenu() {
+  menu.hidden = true
+  menuBtn.setAttribute('aria-expanded', 'false')
+}
+menuBtn.onclick = () => (menu.hidden ? openMenu() : closeMenu())
+addEventListener('pointerdown', (e) => {
+  if (!menu.hidden && !menu.contains(e.target) && !menuBtn.contains(e.target)) closeMenu()
+}, true)
+menu.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+  e.preventDefault()
+  const items = [...menu.querySelectorAll('button')]
+  const i = items.indexOf(document.activeElement)
+  items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus()
+})
+
+function openSheet(title, { wide = false } = {}) {
+  closeMenu()
+  document.activeElement?.blur?.()
+  document.getElementById('sheet-title').textContent = title
+  sheet.classList.toggle('wide', wide)
+  sheetBody.replaceChildren()
+  sheet.hidden = false
+  return sheetBody
+}
+function closeSheet() { sheet.hidden = true; sheetBody.replaceChildren() }
+document.getElementById('sheet-close').onclick = closeSheet
+sheet.addEventListener('pointerdown', (e) => { if (e.target === sheet) closeSheet() })
+
+function openTrash() {
+  const body = openSheet('Lixeira')
+  const draw = () => {
+    body.replaceChildren()
+    if (!trash.length) { body.append(elt('p', 'sheet-empty', 'A lixeira está vazia.')); return }
+    body.append(elt('p', 'sheet-note', `Os últimos ${TRASH_MAX} cartões excluídos ficam aqui. Devolver põe o cartão de volta na mesa, no lugar onde estava.`))
+    const ul = elt('ul', 'rows')
+    for (const d of [...trash].reverse()) {
+      const li = elt('li')
+      const main = elt('div', 'r-main')
+      main.append(elt('div', 'r-text', docText(d.doc) || '(sem texto)'))
+      const meta = elt('div', 'r-meta')
+      if (d.cat) meta.append(elt('span', 'r-cat c-' + d.cat, CAT_LABEL[d.cat]), ' · ')
+      meta.append('excluído em ' + when(d.deletedAt))
+      main.append(meta)
+      const b = elt('button', 'act', 'devolver')
+      b.onclick = () => {
+        if (blocked()) return
+        const c = reviveFromTrash(d.id)
+        c?.view.dom.blur()
+        draw()
+      }
+      li.append(main, b)
+      ul.append(li)
+    }
+    body.append(ul)
+  }
+  draw()
+}
+
+async function openSnapshots() {
+  const body = openSheet('Instantâneos')
+  body.append(elt('p', 'sheet-empty', 'Procurando…'))
+  const list = await listSnapshots()
+  if (sheet.hidden) return
+  body.replaceChildren()
+  if (!list.length) {
+    body.append(elt('p', 'sheet-empty', DEMO_MODE
+      ? 'A demonstração não guarda instantâneos.'
+      : 'Ainda não há instantâneos. O primeiro é guardado depois de alguns minutos de uso.'))
+    return
+  }
+  body.append(elt('p', 'sheet-note', 'Cópias automáticas da mesa inteira (cartões, lixeira e ordens), feitas a cada 5 minutos de atividade. Voltar a uma delas não apaga nada: o estado de agora vira um instantâneo antes.'))
+  const ul = elt('ul', 'rows')
+  for (const s of list) {
+    const li = elt('li')
+    const main = elt('div', 'r-main')
+    main.append(elt('div', 'r-text', when(s.t)), elt('div', 'r-meta', `${s.n} cartão${s.n === 1 ? '' : 'ões'}`))
+    const b = elt('button', 'act', 'voltar a este')
+    b.onclick = () => {
+      ul.querySelectorAll('.asking').forEach((x) => x.classList.remove('asking'))
+      ul.querySelectorAll('.r-ask, .r-yes, .r-no').forEach((x) => x.remove())
+      ul.querySelectorAll('button.act').forEach((x) => { x.hidden = false })
+      li.classList.add('asking')
+      b.hidden = true
+      const yes = elt('button', 'act r-yes', 'sim, voltar')
+      const no = elt('button', 'act quiet r-no', 'cancelar')
+      yes.onclick = async () => {
+        yes.disabled = true
+        const msg = await restoreSnapshot(s.t)
+        if (msg !== 'Restaurando…') { closeSheet(); say(msg) }
+      }
+      no.onclick = () => { li.classList.remove('asking'); li.querySelectorAll('.r-ask, .r-yes, .r-no').forEach((x) => x.remove()); b.hidden = false }
+      li.append(yes, no, elt('div', 'r-ask', `A mesa volta a como estava em ${when(s.t)}. O que existe agora fica guardado como o instantâneo mais recente.`))
+    }
+    li.append(main, b)
+    ul.append(li)
+  }
+  body.append(ul)
+}
+
+const SHORTCUTS = [
+  ['Na mesa', [
+    ['Duplo clique no fundo ou N', 'novo cartão'],
+    ['Arrastar pela faixa de cima do cartão', 'mover (o texto nunca arrasta)'],
+    ['Encostar um cartão na borda de outro', 'agrupar; Shift + arrastar solta do grupo'],
+    ['T', 'devolve o último cartão excluído'],
+    ['E', 'abre o organizador'],
+    ['Ctrl+S', 'faz um backup (.json)'],
+    ['Ctrl+O', 'importa um backup (só acrescenta)'],
+    ['F1', 'esta lista'],
+  ]],
+  ['Escrevendo num cartão', [
+    ['Ctrl+Enter', 'cria o próximo cartão ao lado'],
+    ['Esc', 'tira o cursor do cartão'],
+    ['**texto** ou Ctrl+B', 'negrito'],
+    ['*texto*, _texto_ ou Ctrl+I', 'itálico'],
+    ['Backspace logo depois de ** ou *', 'desfaz a conversão'],
+    ['Ctrl+Z · Ctrl+Shift+Z', 'desfazer · refazer'],
+    ['Backspace num cartão vazio', 'apaga o cartão'],
+  ]],
+  ['No organizador', [
+    ['← →', 'ler a peça anterior · a próxima'],
+    ['Alt + ← →', 'mover a peça'],
+    ['↑ · ↓', 'pôr de lado · devolver à leitura'],
+    ['R', 'embaralhar'],
+    ['C', 'notas'],
+    ['Ctrl+S', 'salvar a ordem com um nome'],
+    ['Ctrl+Z · Ctrl+Shift+Z', 'desfazer · refazer'],
+    ['Esc', 'voltar à mesa'],
+  ]],
+]
+
+function openShortcuts() {
+  const body = openSheet('Atalhos')
+  const table = elt('table', 'keys')
+  for (const [title, rows] of SHORTCUTS) {
+    const h = elt('tr'); const th = elt('th', null, title); th.colSpan = 2; h.append(th); table.append(h)
+    for (const [k, what] of rows) {
+      const tr = elt('tr'); const td = elt('td'); td.append(elt('kbd', null, k)); tr.append(td, elt('td', null, what)); table.append(tr)
+    }
+  }
+  body.append(table)
 }
 
 /* ------------------------------------------------------------------ *

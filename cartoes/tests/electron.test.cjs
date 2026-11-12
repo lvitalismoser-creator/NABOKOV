@@ -112,6 +112,30 @@ test('pontinho de salvo diz "em disco" depois de gravar o arquivo', async () => 
   assert.ok(fs.readFileSync(FILE, 'utf8').includes('no arquivo'))
 })
 
+test('instantâneo do disco aparece no menu e restaurar regrava o projeto.json', async () => {
+  // o instantâneo só existe em disco (perfil novo: IndexedDB e localStorage vazios)
+  const t0 = Date.now() - 3600e3
+  const old = { savedAt: t0, cards: [{ id: 'a', x: 80, y: 90, doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'versao antiga' }] }] } }], trash: [], org: { orders: [], cur: null } }
+  fs.mkdirSync(path.join(data, 'snapshots'), { recursive: true })
+  fs.writeFileSync(path.join(data, 'snapshots', t0 + '.json'), JSON.stringify(old))
+  fs.writeFileSync(FILE, JSON.stringify(old))
+  const { app, win } = await launch()
+  await win.locator('.card .ProseMirror').first().click()
+  await win.keyboard.press('End'); await win.keyboard.type(' e depois mudou'); await sleep(900)
+  await win.keyboard.press('Escape')
+  assert.ok(JSON.stringify(readFile().cards).includes('e depois mudou'))
+  await win.click('#menu-btn'); await win.click('#menu button:has-text("Instantâneos")')
+  await win.waitForSelector('#sheet .rows li')
+  await win.locator('#sheet .rows li button.act').last().click() // o mais antigo
+  await win.click('#sheet .r-yes')
+  assert.ok(await eventually(async () => (await texts(win)).join() === 'versao antiga', { timeout: 8000 }))
+  await closeApp(app)
+  assert.deepEqual(readFile().cards.map((k) => k.doc.content[0].content[0].text), ['versao antiga'])
+  // o estado que foi substituído ficou guardado como instantâneo, em disco
+  const kept = fs.readdirSync(path.join(data, 'snapshots')).map((n) => fs.readFileSync(path.join(data, 'snapshots', n), 'utf8'))
+  assert.ok(kept.some((t) => t.includes('e depois mudou')))
+})
+
 test('a segunda instância não abre', async () => {
   await launch()
   const electronBin = require('electron')

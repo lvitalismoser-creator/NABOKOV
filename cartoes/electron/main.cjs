@@ -100,6 +100,10 @@ ipcMain.handle('disk:load', (e) => (fromApp(e) ? safe(loadProject)() : { rec: nu
 ipcMain.handle('disk:save', (e, rec) => fromApp(e) && safe(saveProject)(rec))
 ipcMain.on('disk:saveSync', (e, rec) => { e.returnValue = fromApp(e) && safe(saveProject)(rec) })
 ipcMain.handle('disk:snapshot', (e, rec) => fromApp(e) && safe(saveSnapshot)(rec))
+// instantâneos em disco, para o item "Instantâneos" do menu
+const listSnapshots = () => snapFiles().map((t) => ({ t, n: readRec(path.join(SNAPS, t + '.json'))?.cards.length ?? -1 })).filter((s) => s.n >= 0)
+ipcMain.handle('disk:snapshots', (e) => (fromApp(e) ? safe(listSnapshots)() || [] : []))
+ipcMain.handle('disk:snapshotGet', (e, t) => (fromApp(e) && Number.isSafeInteger(t) ? safe(() => readRec(path.join(SNAPS, t + '.json')) || null)() || null : null))
 
 let win
 function createWindow() {
@@ -111,7 +115,8 @@ function createWindow() {
     },
   })
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  win.webContents.on('will-navigate', (e) => e.preventDefault())
+  // a página nunca navega para outro lugar; recarregar o próprio arquivo pode (restaurar instantâneo)
+  win.webContents.on('will-navigate', (e, url) => { if (url.split('#')[0] !== win.webContents.getURL().split('#')[0]) e.preventDefault() })
   win.loadFile(path.join(__dirname, '..', 'index.html'))
 }
 
