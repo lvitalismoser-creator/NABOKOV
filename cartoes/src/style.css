@@ -245,18 +245,18 @@ body.is-empty #empty { display: flex; }
   position: fixed; left: 50%; bottom: 26px;
   translate: -50% 20px;
   opacity: 0; pointer-events: none;
-  padding: 9px 16px;
+  padding: 7px 16px;
   background: var(--grain), var(--paper);
   border-radius: 3px;
   box-shadow: 0 0 0 .5px rgba(80, 60, 30, .2), 0 8px 18px -8px rgba(70, 50, 20, .5);
-  font: 15px/1 var(--serif);
+  font: 15px/20px var(--serif); max-width: calc(100vw - 48px);
   transition: opacity .25s, translate .25s;
   user-select: none;
 }
 #toast.show { opacity: 1; translate: -50% 0; pointer-events: auto; }
 #toast button {
   margin-left: 12px; padding: 0; border: 0; background: none;
-  font: italic 15px var(--serif); color: #b5483a; cursor: pointer;
+  font: italic 15px/20px var(--serif); color: #b5483a; cursor: pointer;
   text-decoration: underline; text-underline-offset: 3px;
 }
 
@@ -302,7 +302,12 @@ body.is-empty #empty { display: flex; }
 .card:hover .stash { opacity: 1; }
 .stash:hover { color: #2a5a85; text-decoration: underline; text-underline-offset: 3px; }
 .card.in-group .stash { display: none; }
-.card.stashing { animation: leave .18s ease-in both; pointer-events: none; }
+.card.stashing { pointer-events: none; transform-origin: 0 0; }
+/* acabou de voltar à mesa: um contorno que se apaga */
+.card.arrived .paper { animation: arrived 1.4s ease-out; }
+@keyframes arrived {
+  0%, 35% { box-shadow: 0 0 0 3px rgba(63, 111, 154, .7), 0 16px 26px -12px rgba(70, 50, 20, .55); }
+}
 .card.stashed { display: none; }
 
 /* ---------- grupos temporários ---------- */
@@ -406,7 +411,7 @@ body.has-stash #dock { display: flex; }
 body.showing #dock, body.showing #corner { visibility: hidden; }
 .dock-label {
   flex: none; align-self: center;
-  font: italic 12.5px var(--serif); color: rgba(60, 45, 25, .55);
+  font: italic 13px var(--serif); color: rgba(60, 45, 25, .7);
 }
 
 .chip {

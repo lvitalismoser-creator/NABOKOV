@@ -562,3 +562,59 @@ test('moldura: invisível fora do foco, levemente visível só no cartão com fo
   assert.deepEqual(errors, [])
   await ctx.close()
 })
+
+/* ---------------- Fase 8: avisos e gaveta ---------------- */
+test('gaveta: rótulo com a contagem, aviso diz onde o cartão está, desfazer; devolver destaca o cartão e leva a mesa até ele', async () => {
+  const { ctx, page, errors } = await open([card('a', 100, 120, 'alfa'), card('b', 2400, 1500, 'beta'), card('c', 520, 120, 'gama')])
+  const stash = async (text) => { const c = page.locator('.card', { hasText: text }); await c.hover(); await c.locator('.stash').click(); await sleep(450) }
+  await stash('alfa')
+  assert.equal(await page.textContent('#toast'), 'Cartão guardado · está na gaveta, embaixo à direitadesfazer')
+  assert.equal(await page.textContent('.dock-label'), 'gaveta (1)')
+  assert.deepEqual(await texts(page), ['beta', 'gama'])
+  await page.click('#toast button'); await sleep(300)   // desfazer
+  assert.equal(await page.locator('#dock .chip').count(), 0)
+  assert.deepEqual((await texts(page)).sort(), ['alfa', 'beta', 'gama'])
+  await stash('alfa'); await stash('gama')
+  assert.equal(await page.textContent('.dock-label'), 'gaveta (2)')
+  // devolver: aviso, destaque e, se estiver fora da vista, a mesa vai até o cartão
+  await page.keyboard.press('Control+0'); await sleep(450) // enquadra "beta", o único na mesa, lá longe
+  await page.click('#dock .chip >> nth=0'); await sleep(500)
+  assert.equal(await page.textContent('#toast'), 'Cartão devolvido · voltou para o lugar dele na mesadesfazer')
+  assert.equal(await page.locator('.card.arrived').count(), 1)
+  const b = await box(page, 'alfa')
+  assert.ok(b.x >= 0 && b.y >= 0 && b.x + b.width <= 1280 && b.y + b.height <= 800, JSON.stringify(b))
+  const s = await saved(page)
+  assert.deepEqual([s.a.x, s.a.y, s.a.stashed], [100, 120, false])
+  await page.keyboard.press('Control+z'); await sleep(450) // o desfazer da mesa guarda de novo
+  assert.equal(await page.textContent('.dock-label'), 'gaveta (2)')
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
+
+test('avisos: mesmo lugar e mesmo tempo, dizendo o que aconteceu e onde está', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  const page = await ctx.newPage()
+  await seed(page, { 'cartoes.v1': JSON.stringify(DOIS), 'cartoes.v1.t': String(Date.now() - 1000) })
+  await page.clock.install()
+  await page.goto(URL_APP); await page.waitForSelector('.card')
+  await page.addStyleTag({ content: '#toast { transition: none !important; }' }) // mede a posição final, não o meio da animação
+  const shown = () => page.locator('#toast').evaluate((e) => e.classList.contains('show'))
+  const pos = () => page.locator('#toast').evaluate((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.bottom)] })
+  const seen = []
+  const check = async (re) => {
+    assert.match(await page.textContent('#toast'), re)
+    assert.equal(await shown(), true)
+    await page.clock.runFor(400); seen.push(await pos())
+    await page.clock.runFor(5300); assert.equal(await shown(), true, 'sumiu cedo: ' + re)
+    await page.clock.runFor(600); assert.equal(await shown(), false, 'ficou demais: ' + re)
+  }
+  await page.keyboard.press('t')                    // aviso simples
+  await check(/A lixeira está vazia/)
+  const c = page.locator('.card', { hasText: 'alfa' })
+  await c.hover(); await c.locator('.close').click() // aviso com desfazer
+  await check(/^Cartão excluído · está na lixeira \(menu ≡\)desfazer$/)
+  await page.keyboard.press('t')
+  await check(/^Cartão devolvido da lixeira · voltou para o lugar dele na mesa$/)
+  for (const p of seen) assert.ok(Math.abs(p[0] - seen[0][0]) <= 1 && Math.abs(p[1] - seen[0][1]) <= 1, 'os avisos aparecem sempre no mesmo lugar: ' + JSON.stringify(seen))
+  await ctx.close()
+})

@@ -878,7 +878,7 @@ function deleteSel() {
   if (!ids.length) return
   const undo = once(() => {
     const back = ids.map((id) => reviveFromTrash(id, { focus: false })).filter(Boolean)
-    if (back.length) { setSel(back); reveal(back) }
+    if (back.length) { setSel(back); reveal(back); arrived(back) }
   })
   rememberMesa('excluir', undo)
   sayUndo(`${nOf(ids.length, 'cartão excluído · está', 'cartões excluídos · estão')} na lixeira`, undo)
@@ -890,7 +890,7 @@ function stashSel() {
   if (!list.length) { say('Escreva algo antes de guardar'); return }
   clearSel()
   stashUnit(list, { quiet: true })
-  const undo = once(() => { const back = list.filter((c) => cards.has(c.id) && c.stashed); if (back.length) { restoreUnit(back); setSel(back) } })
+  const undo = once(() => { const back = list.filter((c) => cards.has(c.id) && c.stashed); if (back.length) { restoreUnit(back, { quiet: true }); setSel(back) } })
   rememberMesa('guardar', undo)
   sayUndo(`${nOf(list.length, 'cartão guardado · está', 'cartões guardados · estão')} na gaveta`, undo)
 }
@@ -995,33 +995,42 @@ function reviveFromTrash(id, { focus = true } = {}) {
 function reopenLast() {
   if (blocked()) return
   if (!trash.length) { say('A lixeira está vazia'); return }
-  reviveFromTrash()
-  say(trash.length ? `Cartão devolvido · ${trash.length} ainda na lixeira` : 'Cartão devolvido')
+  const c = reviveFromTrash()
+  if (c) arrived([c])
+  say('Cartão devolvido da lixeira · voltou para o lugar dele na mesa' + (trash.length ? ` · ${trash.length} ainda na lixeira` : ''))
 }
 
 let toastTimer
 function showUndo(snapshot) {
-  sayUndo('Cartão excluído', () => reviveFromTrash(snapshot.id))
+  sayUndo('Cartão excluído · está na lixeira (menu ≡)', () => { const c = reviveFromTrash(snapshot.id); if (c) arrived([c]) })
 }
 
-/* Aviso com um botão "desfazer" (some sozinho em 6 s). */
+/* Avisos: sempre no mesmo lugar e pelo mesmo tempo, dizendo o que aconteceu e onde a coisa
+ * está; quando dá para voltar atrás, com um botão "desfazer". */
+const TOAST_MS = 6000
 const sayUndo = (msg, fn) => sayAct(msg, 'desfazer', fn)
 function sayAct(msg, label, fn) {
-  toast.textContent = msg
+  say(msg)
   const b = document.createElement('button')
   b.textContent = label
   b.onclick = () => { toast.classList.remove('show'); fn() }
   toast.append(b)
-  toast.classList.add('show')
-  clearTimeout(toastTimer)
-  toastTimer = setTimeout(() => toast.classList.remove('show'), 6000)
 }
 
 function say(msg) {
   toast.textContent = msg
   toast.classList.add('show')
   clearTimeout(toastTimer)
-  toastTimer = setTimeout(() => toast.classList.remove('show'), 3200)
+  toastTimer = setTimeout(() => toast.classList.remove('show'), TOAST_MS)
+}
+
+/* Destaca por um instante os cartões que acabaram de voltar à mesa. */
+function arrived(list) {
+  list.forEach((k) => {
+    k.el.classList.remove('arrived'); void k.el.offsetWidth
+    k.el.classList.add('arrived')
+    setTimeout(() => k.el.classList.remove('arrived'), 1500)
+  })
 }
 
 function syncEmpty() {
@@ -1043,28 +1052,45 @@ function stashUnit(list, { quiet = false } = {}) {
   if (blocked()) return
   if (list.some((k) => isEmpty(k.view.state))) { say('Escreva algo antes de guardar'); return }
   const t = Date.now()
+  // o cartão "voa" até a gaveta, para ficar claro para onde foi
+  const d = dock.getBoundingClientRect()
+  const [tx, ty] = toWorld(d.width ? d.left + 40 : innerWidth - 90, d.width ? d.top + 20 : innerHeight - 70)
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches
   list.forEach((k, i) => {
     k.view.dom.blur()
     k.stashed = true; k.sa = t + i
     k.el.classList.add('stashing')
-    setTimeout(() => { k.el.classList.remove('stashing'); k.el.classList.add('stashed') }, 180)
+    const fly = k.el.animate([
+      { transform: `translate(${k.x}px, ${k.y}px) scale(1)`, opacity: 1 },
+      { transform: `translate(${tx}px, ${ty}px) scale(.18)`, opacity: 0.1 },
+    ], { duration: still ? 1 : 300, easing: 'cubic-bezier(.5, 0, .7, .4)' })
+    fly.onfinish = fly.oncancel = () => { k.el.classList.remove('stashing'); if (k.stashed) k.el.classList.add('stashed') }
   })
   if (list.includes(current)) { current = null; document.body.classList.remove('editing') }
   cleanGroups(); syncEmpty(); renderGroups(); renderDock(); paintSel(); save()
+  if (quiet) return
+  const undo = once(() => { const back = list.filter((c) => cards.has(c.id) && c.stashed); if (back.length) restoreUnit(back, { quiet: true }) })
+  rememberMesa('guardar', undo)
+  sayUndo((list.length > 1 ? `Grupo guardado (${list.length} cartões) · está` : 'Cartão guardado · está') + ' na gaveta, embaixo à direita', undo)
 }
 
-function restoreUnit(list) {
+function restoreUnit(list, { quiet = false } = {}) {
   if (blocked()) return
   list.forEach((k) => {
+    k.el.getAnimations().forEach((a) => a.cancel())
     k.stashed = false
-    k.el.classList.remove('stashed')
-    k.el.classList.add('entering')
-    k.el.addEventListener('animationend', () => k.el.classList.remove('entering'), { once: true })
+    k.el.classList.remove('stashed', 'stashing')
     measure(k)
   })
   bringUnitToFront(list)
   syncEmpty(); renderGroups(); renderDock(); save()
+  // mostra para onde voltou: a mesa vai até lá e o cartão pisca
   reveal(list)
+  arrived(list)
+  if (quiet) return
+  const undo = once(() => { const back = list.filter((c) => cards.has(c.id) && !c.stashed); if (back.length) stashUnit(back, { quiet: true }) })
+  rememberMesa('devolver', undo)
+  sayUndo((list.length > 1 ? `Grupo devolvido (${list.length} cartões) · voltou` : 'Cartão devolvido · voltou') + ' para o lugar dele na mesa', undo)
 }
 
 function chipOf(lead, n, extraClass = '') {
@@ -1093,11 +1119,12 @@ function renderDock() {
   if (!units.length) return
   const label = document.createElement('span')
   label.className = 'dock-label'
-  label.textContent = 'guardados'
+  label.textContent = `gaveta (${st.length})`
+  label.title = 'Cartões guardados fora da mesa; nada aqui foi excluído'
   dock.append(label)
   for (const u of units) {
     const chip = chipOf(u[0], u.length)
-    chip.title = 'Devolver ao quadro'
+    chip.title = 'Devolver à mesa, no lugar onde estava'
     chip.onclick = () => restoreUnit(u)
     dock.append(chip)
   }
@@ -2000,7 +2027,7 @@ function exportJSON() {
   a.download = `cartoes-${new Date().toISOString().slice(0, 10)}.json`
   document.body.append(a); a.click(); a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
-  say(`Exportei ${cards.size} cartão(ões)`)
+  say(`Backup feito (${nCards(cards.size)}) · ` + (disk ? 'escolha onde guardar o arquivo .json' : 'o arquivo .json está na pasta de downloads'))
 }
 
 function importCards(text) {
@@ -2033,7 +2060,7 @@ function importCards(text) {
     nOrd++
   }
   cleanGroups(); renderGroups(); renderDock(); syncEmpty(); save()
-  say(`${good.length} cartão(ões) importado(s)` + (nOrd ? ` · ${nOrd} ordem(ns)` : '') + (bad ? ` · ${bad} ignorado(s)` : ''))
+  say(`${nOf(good.length, 'cartão importado · está', 'cartões importados · estão')} na mesa` + (nOrd ? ` · ${nOf(nOrd, 'ordem', 'ordens')} no organizador` : '') + (bad ? ` · ${nOf(bad, 'ignorado', 'ignorados')}` : ''))
   return good.length
 }
 
