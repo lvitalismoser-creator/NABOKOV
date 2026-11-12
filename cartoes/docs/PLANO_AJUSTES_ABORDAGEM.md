@@ -41,6 +41,8 @@ A revisão encontrou quatro problemas:
 
 ## Fase 6 — Proteção do texto, menu, salvo e exportação simples
 
+> **Estado (2026-11-12):** feita, aguardando conferência do dono no instalador 1.1.0. Detalhes em `PLANO_FASES_5_A_8.md`.
+
 ### Bloco 6.1 — Texto e documentação (primeiro)
 
 - **I8:** o Backspace num cartão só com espaços não apaga sem desfazer. O comportamento exato fica para quando a fase abrir; a regra é que nenhum texto suma sem volta.

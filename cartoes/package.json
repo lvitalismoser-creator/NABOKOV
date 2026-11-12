@@ -1,6 +1,6 @@
 {
   "name": "cartoes",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Editor para escritores: cartões de livre manipulação, inspirado nas fichas de Nabokov",
   "author": "Cartões",
   "license": "ISC",
@@ -19,6 +19,7 @@
     "productName": "Cartões",
     "directories": { "output": "dist" },
     "files": ["index.html", "electron/**/*", "package.json"],
+    "publish": null,
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
       "signAndEditExecutable": false

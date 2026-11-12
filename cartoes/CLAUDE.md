@@ -6,7 +6,9 @@ Programa desktop para escritores: editor de texto com organização integrada, i
 
 ## Estado atual
 
-App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), lixeira, exportar/importar e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 27 testes automatizados (`npm test`). Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
+App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), pontinho de salvo, menu ≡ (lixeira, instantâneos, atalhos) e exportação TXT/MD/PDF (Fase 6), lixeira, backup `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 43 testes automatizados (`npm test`). Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
+
+O estado de cada fase (feita / aguardando conferência do dono) fica em `docs/PLANO_FASES_5_A_8.md`.
 
 Documentos de contexto, em `docs/`:
 
@@ -16,7 +18,8 @@ Documentos de contexto, em `docs/`:
 - `docs/HANDOFF_*.md`: registros de sessões passadas (histórico; não são atualizados).
 - `docs/REVISAO_E_PLANO_SALVAMENTO.md`: histórico da revisão e do plano de salvamento (Fases 0–4).
 
-- `src/main.js`: lógica (ProseMirror, quadro, arrasto, persistência, demo)
+- `src/main.js`: lógica (ProseMirror, quadro, arrasto, persistência, organizador, menu, janela de exportar, demo)
+- `src/export.js`: funções puras que montam o documento exportado (TXT, MD e o HTML do PDF)
 - `src/style.css`: todo o visual
 - `src/template.html`: casca HTML com marcadores `/*__CSS__*/` e `/*__JS__*/`
 - `build.mjs`: empacota tudo em `index.html` (esbuild, um arquivo, funciona offline)
@@ -71,7 +74,15 @@ Só estas três são aceitas. Qualquer outro elemento visível por padrão conti
   - Lixeira: até 50 excluídos, persistente; tecla `T` reabre o último. Instantâneos: 20 recentes + 1 por dia (7 dias), a cada 5 min de atividade.
   - **App desktop (Electron):** `electron/main.cjs` (processo principal, dono do disco) + `electron/preload.cjs` (ponte `window.cartoesDisk`; a página não vê Node). Projeto em `<userData>/cartoes/projeto.json` (`CARTOES_DATA_DIR` sobrescreve, usado nos testes), gravação atômica (tmp + fsync + rename, com retentativa em EPERM/EBUSY), `projeto.json.bak` (renovado a cada ≥30 s) e `snapshots/<ms>.json` (20 + 1 por dia, 7 dias). Arquivo ilegível nunca é sobrescrito: vai para `projeto.corrompido-<hora>.json` e carrega-se `.bak` ou o último instantâneo. Ao abrir vale o registro mais novo entre disco, IndexedDB e localStorage (empate: disco), então quem já tinha dados no navegador é migrado sem apagar a origem. No fechamento a gravação é síncrona (`saveSync`). Instância única. `Ctrl+N` fica livre.
   - Rodar: `npm start` (rebuilda e abre o Electron).
-  - `Ctrl+S` (na mesa) exporta `.json` com cartões, lixeira e ordens; `Ctrl+O` importa (só acrescenta; ordens nomeadas entram como "(importada)", com os ids novos). Console: `cartoes.snapshots()`, `cartoes.restore(t)`, `cartoes.trash()`, `cartoes.ordens()`.
+  - `Ctrl+S` (na mesa) exporta `.json` com cartões, lixeira e ordens; `Ctrl+O` importa (só acrescenta; ordens nomeadas entram como "(importada)", com os ids novos). Console: `cartoes.snapshots()`, `cartoes.restore(t)`, `cartoes.trash()`, `cartoes.ordens()`, `cartoes.exportText()`.
+- **Pontinho de salvo (Fase 6):** `#saved`, no canto superior direito. Classe `saved` (cinza), `saving` (pisca enquanto há edição por gravar), `failed` (vermelho) ou `ro` (vazado, aba somente leitura). O texto do hover fica em `data-tip` ("salvo às 14:32 · em disco" / "neste navegador" / "só nesta demonstração").
+- **Menu ≡ (Fase 6):** `#menu-btn` ao lado de "organizar". Itens: Exportar… (`Ctrl+E`), Importar backup… (`Ctrl+O`), Fazer backup (.json) (`Ctrl+S`), Lixeira, Instantâneos, Atalhos (`F1`). As janelas usam a mesma "folha" (`#sheet`, `openSheet`/`closeSheet`); com ela aberta as teclas não chegam à mesa e `Esc` fecha.
+  - Instantâneos: `listSnapshots()` junta os do IndexedDB e, no app desktop, os de `snapshots/` (`disk.snapshots`/`disk.snapshotGet`). `restoreSnapshot(t)` guarda o estado de agora como instantâneo, grava o antigo com hora mais nova em todos os destinos (inclusive o disco) e recarrega.
+- **Exportar (Fase 6):** janela com ordem (cada ordem ou a leitura da mesa), modelo (`corrido` / `secao` / `ficha`) e formato (`pdf` / `txt` / `md`), mais a prévia. Peças de lado não saem. Negrito e itálico saem como `**x**` e `*x*` em TXT e MD.
+  - App desktop: `disk.exportFile` / `disk.exportPdf` abrem o diálogo de salvar do sistema e gravam no processo principal; o PDF é paginado por `printToPDF` numa janela escondida e sem scripts. `disk.exportReveal` mostra na pasta o último arquivo exportado (a página não escolhe caminho).
+  - Navegador: download (sem acento no nome) ou a impressão do navegador, no PDF.
+  - Console: `cartoes.exportText(idDaOrdem | 'mesa', modelo, formato)` devolve o texto sem gravar nada.
+  - DOCX/ODT ficam para depois da validação.
 - Atalhos: `E` abre o organizador; duplo clique no fundo ou `N` cria cartão; `Ctrl/⌘+Enter` cria o próximo ao lado; `Esc` tira o foco; `Backspace` em cartão sem nenhum caractere o apaga (um cartão só com espaços perde os espaços um a um, e `Ctrl+Z` os devolve); `Backspace` logo depois de uma conversão markdown a desfaz.
 - Interface em português (pt-BR).
 
@@ -90,6 +101,8 @@ npm run dist:dir   # só o app descompactado: dist/win-unpacked/Cartões.exe
 ```
 
 - electron-builder, configuração no campo `build` do `package.json`. O pacote leva só `index.html`, `electron/` e `package.json`; ProseMirror e esbuild são devDependencies porque já vão embutidos no `index.html`.
+- Gerar o instalador no Linux exige `wine` e `wine32` (o NSIS roda o desinstalador por ele). Foi assim que os instaladores 1.1.0 em diante foram gerados.
+- `"publish": null` no `build`: sem isso o electron-builder tenta adivinhar um destino de publicação pelo repositório git e falha no fim.
 - Sem ícone próprio (usa o do Electron) e sem assinatura de código: o Windows SmartScreen vai avisar na primeira execução. `signAndEditExecutable: false` evita a exigência de privilégio de symlink no build; para assinar/colocar ícone, remova essa opção e configure `win.icon` e um certificado.
 - Desinstalar não apaga os dados (`deleteAppDataOnUninstall: false`); o projeto fica em `<userData>\cartoes\projeto.json` (pasta do app em `%APPDATA%`; não conferi o nome exato dela no app instalado).
 - `dist/` é gerado; não editar nem versionar.
@@ -97,16 +110,19 @@ npm run dist:dir   # só o app descompactado: dist/win-unpacked/Cartões.exe
 ## Testes
 
 ```bash
-npm test              # rebuilda e roda tudo (node:test + Playwright, 27 testes, ~1 min)
+npm test              # rebuilda e roda tudo (node:test + Playwright, 43 testes, ~1 min)
 npm run test:browser  # persistência no navegador (contextos limpos)
 npm run test:electron # app desktop; isolado por CARTOES_DATA_DIR (arquivo e perfil do Chromium)
 ```
 
-- `tests/browser.test.cjs`: salvar, demo isolado, JSON ilegível, quarentena, aviso de falha, IndexedDB x espelho, aba única, teto de espera, lixeira, exportar/importar, instantâneos.
-- `tests/electron.test.cjs`: ponte sem Node, gravação ao fechar, disco como fonte, `.bak`/instantâneos/recuperação, instância única, ordens no `projeto.json`.
+- `tests/browser.test.cjs`: salvar, demo isolado, JSON ilegível, quarentena, aviso de falha, IndexedDB x espelho, aba única, teto de espera, lixeira, backup/importar, instantâneos, I7, I8, pontinho de salvo.
+- `tests/electron.test.cjs`: ponte sem Node, gravação ao fechar, disco como fonte, `.bak`/instantâneos/recuperação, instância única, ordens no `projeto.json`, pontinho "em disco", restaurar instantâneo do disco, exportar TXT/MD/PDF pelo diálogo (o diálogo é trocado por uma resposta fixa com `app.evaluate`).
 - `tests/organizer.test.cjs`: ordem de leitura da mesa, mover (teclado e arrasto), pôr de lado, notas, salvar com nome, bandeja, separar grupo, embaralhar (I6), dispor na mesa + desfazer, Ctrl+Z, lixeira devolve ao lugar, exportar/importar ordens, demo isolado.
+- `tests/menu.test.cjs`: menu ≡, lixeira, instantâneos, atalhos (F1), demo isolado.
+- `tests/export.test.cjs`: conteúdo de cada modelo e formato, escapes, janela Exportar e download.
 - Depois de `goto`, espere `.ProseMirror-focused` antes de digitar: a inicialização é assíncrona e teclas antes disso caem nos atalhos globais.
 - Nunca rode testes sem `CARTOES_DATA_DIR` no Electron: sem isso eles gravam no perfil real do usuário.
+- Num contêiner Linux como root: `ELECTRON_DISABLE_SANDBOX=1 xvfb-run -a npm test` (sem isso o teste da segunda instância falha, porque o Electron não abre como root). Se o Playwright do `package.json` não casar com o Chromium já instalado, `npm i --no-save playwright@<versão instalada>` resolve sem mexer no `package.json`.
 
 ## Regras para trabalhar aqui
 

@@ -76,7 +76,25 @@ A tela de embaralhar vira o organizador.
 - **De carona:** corrigir o I6 (embaralhar repetindo a ordem com 2 peças).
 - **Testes:** reordenar, pôr de lado, salvar, reabrir após fechar, cartão novo indo para a bandeja, grupo aberto, persistência no Electron.
 
-## Fase 6 — Menu, salvo e exportação
+## Fase 6 — Menu, salvo e exportação — feita em 2026-11-12, aguardando conferência do dono
+
+Instalador: `Cartoes-Setup-1.1.0.exe`. Vira ✅ quando o dono instalar e conferir.
+
+**Como ficou** (blocos 6.1 a 6.4 do `PLANO_AJUSTES_ABORDAGEM.md`):
+
+- **I7 e I8.** Backspace logo depois de `**x**`/`*x*` desfaz a conversão. Backspace só apaga o cartão que não tem nenhum caractere; espaços se apagam um a um.
+- **Pontinho de salvo** no canto superior direito: cinza = salvo, pisca enquanto há algo por gravar, vermelho se falhar. O hover mostra "salvo às 14:32 · em disco".
+- **Menu ≡:** Exportar…, Importar backup…, Fazer backup (.json), Lixeira, Instantâneos, Atalhos (F1).
+  - Lixeira: lista os excluídos e devolve um por um. Não há "esvaziar".
+  - Instantâneos: lista, pede confirmação e restaura; o estado de agora vira instantâneo antes.
+- **Exportar** (`Ctrl+E`): ordem, modelo, formato (PDF, TXT, MD) e prévia. DOCX/ODT ficaram para depois da validação.
+- **De carona:** restaurar instantâneo não funcionava no app desktop (o recarregamento era bloqueado e o arquivo em disco, mais novo, vencia). Corrigido.
+- **Testes:** 16 novos. Total: 43, todos passando.
+
+As escolhas feitas sem o dono estão em `HANDOFF_2026-11-12.md`, em "Decisões tomadas sozinho".
+
+Plano original:
+
 
 - **Pontinho de salvo.**
 - **Menu ≡** discreto: Exportar…, Importar backup…, Fazer backup (.json), Lixeira, Instantâneos (resolve "restaurar sem console"), Atalhos. Cada item mostra o atalho.
