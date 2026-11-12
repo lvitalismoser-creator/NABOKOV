@@ -279,3 +279,96 @@ test('I2/I3: grupo nunca fica metade na gaveta; devolver da gaveta traz a mesa a
   assert.deepEqual(errors, [])
   await ctx.close()
 })
+
+/* ---------------- Fase 7b: tamanhos P/M/G ---------------- */
+const SZ = { p: [252, 158], m: [340, 214], g: [474, 298] }
+const pick = async (page, text, size) => {
+  const c = page.locator('.card', { hasText: text })
+  await c.hover(); await c.locator(`.sizes button[data-s="${size}"]`).click()
+}
+
+test('tamanhos P/M/G: botão no hover e Alt+1/2/3 mudam o tamanho, na proporção de ficha, sem tocar no texto', async () => {
+  const { ctx, page, errors } = await open(DOIS)
+  await pick(page, 'alfa', 'g')
+  let b = await box(page, 'alfa')
+  assert.deepEqual([b.width, b.height], SZ.g)
+  let s = await saved(page)
+  assert.equal(s.a.s, 'g'); assert.deepEqual([s.a.x, s.a.y], [100, 120]) // o canto não sai do lugar
+  assert.equal(s.b.s ?? null, null)
+  await pick(page, 'alfa', 'p')
+  b = await box(page, 'alfa')
+  assert.deepEqual([b.width, b.height], SZ.p)
+  for (const [w, h] of Object.values(SZ)) assert.ok(Math.abs(w / h - 340 / 214) < 0.012, 'proporção de ficha')
+  // pelo teclado, com o cursor no cartão
+  await page.locator('.card', { hasText: 'beta' }).locator('.ProseMirror').click()
+  await page.keyboard.press('Alt+3')
+  assert.deepEqual(await box(page, 'beta').then((r) => [r.width, r.height]), SZ.g)
+  await page.keyboard.type(' continua')
+  assert.deepEqual((await texts(page)).sort(), ['alfa', 'beta continua'])
+  await page.keyboard.press('Alt+2')
+  s = await saved(page)
+  assert.equal(s.b.s ?? null, null); assert.equal(s.a.s, 'p')
+  // sobrevive ao recarregar; Ctrl+Z na mesa desfaz a última mudança de tamanho
+  await page.reload(); await sleep(400)
+  assert.deepEqual(await box(page, 'alfa').then((r) => [r.width, r.height]), SZ.p)
+  await pick(page, 'alfa', 'm')
+  await page.mouse.click(5, 300)
+  await page.keyboard.press('Control+z')
+  assert.deepEqual(await box(page, 'alfa').then((r) => [r.width, r.height]), SZ.p)
+  assert.match(await page.textContent('#toast'), /Desfeito: tamanho/)
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
+
+test('tamanhos: o estouro vira pilha conforme o tamanho; valor inválido abre como M', async () => {
+  const cinco = { id: 'l', x: 100, y: 120, r: 0, s: 'enorme', doc: doc(...Array.from({ length: 5 }, (_, i) => 'linha ' + i)) }
+  const { ctx, page } = await open([cinco])
+  const depth = () => page.$eval('.card', (e) => e.dataset.depth)
+  assert.deepEqual(await box(page, 'linha 0').then((r) => [r.width, r.height]), SZ.m)
+  assert.equal(await depth(), '0')                 // 5 linhas cabem no M
+  await pick(page, 'linha 0', 'p')
+  assert.notEqual(await depth(), '0')              // no P (4 linhas) sobra texto: pilha
+  assert.equal(await page.$eval('.card', (e) => e.classList.contains('more-below')), true)
+  await pick(page, 'linha 0', 'g')
+  assert.equal(await depth(), '0')
+  // a pauta continua em linhas inteiras nos três tamanhos
+  for (const k of ['p', 'm', 'g']) {
+    await pick(page, 'linha 0', k)
+    assert.equal(await page.$eval('.card .scroll', (e) => e.clientHeight % 28), 0, 'pauta do ' + k)
+  }
+  await ctx.close()
+})
+
+test('ímã e moldura de grupo respeitam tamanhos diferentes', async () => {
+  const MISTO = [card('a', 100, 120, 'alfa', { s: 'g' }), card('b', 900, 600, 'beta'), card('c', 1500, 120, 'gama', { s: 'p' })]
+  const { ctx, page, errors } = await open(MISTO, { viewport: { width: 1800, height: 1000 } })
+  // "beta" (M) encosta na borda direita de "alfa" (G)
+  await drag(page, 'beta', 100 + SZ.g[0] + GAP + 11 - 900, 120 + 7 - 600, { steps: 12 })
+  let s = await saved(page)
+  assert.deepEqual([s.b.x, s.b.y], [100 + SZ.g[0] + GAP, 120])
+  assert.equal(s.a.g, s.b.g)
+  // "gama" (P) encosta embaixo de "alfa" (G): a folga conta a altura do G
+  await drag(page, 'gama', 100 + 6 - 1500, 120 + SZ.g[1] + GAP + 9 - 120, { steps: 12 })
+  s = await saved(page)
+  assert.deepEqual([s.c.x, s.c.y], [100, 120 + SZ.g[1] + GAP])
+  assert.equal(s.c.g, s.a.g)
+  const f = await page.locator('.gframe').boundingBox()
+  assert.ok(Math.abs(f.width - (SZ.g[0] + GAP + SZ.m[0] + 24)) < 3, 'largura da moldura ' + f.width)
+  assert.ok(Math.abs(f.height - (SZ.g[1] + GAP + SZ.p[1] + 44)) < 3, 'altura da moldura ' + f.height)
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
+
+test('dispor na mesa com tamanhos mistos não sobrepõe cartões', async () => {
+  const MISTO = [card('a', 100, 120, 'alfa', { s: 'g' }), card('b', 600, 120, 'beta'), card('c', 1000, 120, 'gama', { s: 'p' }),
+    card('d', 100, 500, 'delta', { s: 'g' }), card('e', 700, 500, 'epsilon', { s: 'g' })]
+  const { ctx, page } = await open(MISTO)
+  await page.keyboard.press('e'); await page.waitForSelector('#show:not([hidden])')
+  await page.click('#org-layout'); await page.waitForSelector('#show[hidden]', { state: 'attached' })
+  const s = Object.values(await saved(page)).map((k) => ({ id: k.id, x0: k.x, y0: k.y, x1: k.x + SZ[k.s || 'm'][0], y1: k.y + SZ[k.s || 'm'][1] }))
+  for (const a of s) for (const b of s) {
+    if (a.id >= b.id) continue
+    assert.ok(a.x1 <= b.x0 || b.x1 <= a.x0 || a.y1 <= b.y0 || b.y1 <= a.y0, `${a.id} e ${b.id} se sobrepõem`)
+  }
+  await ctx.close()
+})

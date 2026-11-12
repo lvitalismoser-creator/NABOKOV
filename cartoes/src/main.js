@@ -38,6 +38,11 @@ const rules = inputRules({
  *  Estado do quadro
  * ------------------------------------------------------------------ */
 const W = 340, H = 214
+// tamanhos P/M/G, sempre na proporção de ficha; a altura dá linhas inteiras de pauta (4, 6 e 9)
+const SIZES = { p: [252, 158], m: [W, H], g: [474, 298] }
+const SIZE_LABEL = { p: 'P', m: 'M', g: 'G' }
+const wOf = (c) => SIZES[c.s || 'm'][0]
+const hOf = (c) => SIZES[c.s || 'm'][1]
 const GAP = 18   // distância entre cartões grudados num grupo
 const SNAP = 28  // alcance do ímã
 const CATS = ['cena', 'nota', 'lugar']
@@ -225,7 +230,7 @@ function save() {
 function snapshotOf(c) {
   // o doc só é reserializado quando mudou (docJ é invalidado a cada edição)
   return {
-    id: c.id, x: c.x, y: c.y, z: c.z, r: c.r, g: c.g, cat: c.cat, stashed: c.stashed, sa: c.sa,
+    id: c.id, x: c.x, y: c.y, z: c.z, r: c.r, g: c.g, cat: c.cat, s: c.s, stashed: c.stashed, sa: c.sa,
     doc: (c.docJ ||= c.view.state.doc.toJSON()),
   }
 }
@@ -367,6 +372,7 @@ function sane(d) {
     x: num(d.x), y: num(d.y), z: num(d.z), r: num(d.r),
     g: typeof d.g === 'string' && d.g ? d.g : null,
     cat: CATS.includes(d.cat) ? d.cat : null,
+    s: d.s === 'p' || d.s === 'g' ? d.s : null, // null = M
     stashed: d.stashed === true,
     sa: num(d.sa) ?? 0,
     doc: d.doc || undefined,
@@ -433,7 +439,7 @@ async function load() {
 function createCard(data = {}, { focus = false, animate = false } = {}) {
   const c = {
     id: data.id || uid(),
-    g: data.g || null, cat: data.cat || null, stashed: !!data.stashed, sa: data.sa || 0,
+    g: data.g || null, cat: data.cat || null, s: data.s || null, stashed: !!data.stashed, sa: data.sa || 0,
     x: data.x ?? 100, y: data.y ?? 100,
     z: data.z ?? ++zTop,
     r: data.r ?? +rand(-0.45, 0.45).toFixed(2),
@@ -449,8 +455,11 @@ function createCard(data = {}, { focus = false, animate = false } = {}) {
       <div class="paper">
         <span class="grip"></span>
         <span class="cats">${CATS.map((k) => `<button tabindex="-1" data-cat="${k}">${CAT_LABEL[k]}</button>`).join('')}</span>
-        <button class="stash" tabindex="-1" title="Guardar na gaveta (não exclui)">${TRAY}guardar</button>
-        <button class="close" tabindex="-1" aria-label="Excluir cartão" title="Excluir">×</button>
+        <span class="tools">
+          <span class="sizes" title="Tamanho do cartão (Alt+1, Alt+2, Alt+3)">${Object.keys(SIZES).map((k) => `<button tabindex="-1" data-s="${k}" aria-label="Tamanho ${SIZE_LABEL[k]}">${SIZE_LABEL[k]}</button>`).join('')}</span>
+          <button class="stash" tabindex="-1" title="Guardar na gaveta (não exclui)">${TRAY}<span>guardar</span></button>
+          <button class="close" tabindex="-1" aria-label="Excluir cartão" title="Excluir">×</button>
+        </span>
         <div class="scroll"><div class="mount"></div></div>
       </div>
     </div>`
@@ -459,6 +468,7 @@ function createCard(data = {}, { focus = false, animate = false } = {}) {
   el.style.setProperty('--r', c.r + 'deg')
   if (c.stashed) el.classList.add('stashed')
   paintCat(c)
+  paintSize(c)
   place(c)
 
   const state = EditorState.create({
@@ -471,6 +481,9 @@ function createCard(data = {}, { focus = false, animate = false } = {}) {
         'Mod-b': toggleMark(schema.marks.strong),
         'Mod-i': toggleMark(schema.marks.em),
         'Mod-Enter': () => { spawnNextTo(c); return true },
+        'Alt-1': () => { setSize([c], 'p'); return true },
+        'Alt-2': () => { setSize([c], 'm'); return true },
+        'Alt-3': () => { setSize([c], 'g'); return true },
         Escape: (_s, _d, view) => { view.dom.blur(); return true },
         Backspace: (s, dispatch) => {
           // logo depois de uma regra markdown, Backspace desfaz a conversão (I7)
@@ -517,6 +530,40 @@ function paintCat(c) {
   c.el.querySelectorAll('.cats button').forEach((b) => b.classList.toggle('on', b.dataset.cat === c.cat))
 }
 
+function paintSize(c) {
+  c.el.dataset.s = c.s || 'm'
+  c.el.querySelectorAll('.sizes button').forEach((b) => b.classList.toggle('on', b.dataset.s === (c.s || 'm')))
+}
+
+/* Tamanho P/M/G: o canto de cima à esquerda fica onde está; o texto não muda, só quanto dele aparece. */
+function setSize(list, size) {
+  if (blocked()) return
+  const s = size === 'm' ? null : size
+  const changed = list.filter((c) => c.s !== s)
+  if (!changed.length) return
+  const before = changed.map((c) => [c, c.s])
+  changed.forEach((c) => { c.s = s; paintSize(c); measure(c) })
+  renderGroups(); save()
+  rememberMesa('tamanho', () => {
+    before.forEach(([c, old]) => { if (cards.has(c.id)) { c.s = old; paintSize(c); measure(c) } })
+    renderGroups(); save()
+  })
+}
+
+/* Desfazer da mesa (Ctrl+Z sem cursor num cartão): mover, tamanho e ações em lote. */
+const mesaPast = []
+function rememberMesa(what, fn) {
+  mesaPast.push({ what, fn })
+  if (mesaPast.length > 40) mesaPast.shift()
+}
+function undoMesa() {
+  if (blocked()) return
+  const u = mesaPast.pop()
+  if (!u) { say('Nada para desfazer na mesa'); return }
+  u.fn()
+  say('Desfeito: ' + u.what)
+}
+
 /* O cartão tem mais texto do que mostra? Mostra isso como pilha de folhas. */
 function measure(c) {
   const s = c.scroll
@@ -551,7 +598,7 @@ const unitOf = (c) => (c.g ? live().filter((k) => k.g === c.g) : [c])
 function rectOf(list) {
   return {
     x0: Math.min(...list.map((k) => k.x)), y0: Math.min(...list.map((k) => k.y)),
-    x1: Math.max(...list.map((k) => k.x)) + W, y1: Math.max(...list.map((k) => k.y)) + H,
+    x1: Math.max(...list.map((k) => k.x + wOf(k))), y1: Math.max(...list.map((k) => k.y + hOf(k))),
   }
 }
 
@@ -620,7 +667,7 @@ function magnet(list, r0, dx, dy) {
   const tryIt = (d, sx, sy, o) => { if (d < SNAP && (!best || d < best.d)) best = { d, sx, sy, o } }
   for (const o of live()) {
     if (list.includes(o)) continue
-    const B = { x0: o.x, y0: o.y, x1: o.x + W, y1: o.y + H }
+    const B = { x0: o.x, y0: o.y, x1: o.x + wOf(o), y1: o.y + hOf(o) }
     const vo = Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0)
     const ho = Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0)
     const alignY = Math.abs(A.y0 - B.y0) < SNAP ? B.y0 - A.y0 : 0
@@ -649,7 +696,7 @@ function startDrag(c, e, host) {
   if (e.shiftKey && c.g) { c.g = null; cleanGroups(); renderGroups() }
   bringUnitToFront(unitOf(c))
   const list = unitOf(c)
-  const start = list.map((k) => [k, k.x, k.y])
+  const start = list.map((k) => [k, k.x, k.y, k.g])
   const r0 = rectOf(list)
   const sx = e.clientX, sy = e.clientY
   let moved = false, snap = null, lit = []
@@ -689,7 +736,13 @@ function startDrag(c, e, host) {
       const f = frames.get(gid)
       if (f) { f.classList.remove('join'); void f.offsetWidth; f.classList.add('join') }
     }
-    if (moved) save(); else if (host === c.el) c.view.focus()
+    if (moved) {
+      save()
+      rememberMesa('mover', () => {
+        start.forEach(([k, x, y, g]) => { if (cards.has(k.id)) { k.x = x; k.y = y; k.g = g; place(k) } })
+        cleanGroups(); renderGroups(); save()
+      })
+    } else if (host === c.el) c.view.focus()
   }
   host.addEventListener('pointermove', move)
   host.addEventListener('pointerup', up)
@@ -711,9 +764,10 @@ function wire(c) {
   })
 
   // arrastar pela moldura (faixa de cima e margens), nunca pelo texto
-  const ctl = '.scroll, .close, .stash, .cats'
+  const ctl = '.scroll, .close, .stash, .cats, .sizes'
   el.addEventListener('mousedown', (e) => {
-    if (!e.target.closest(ctl)) e.preventDefault() // mantém o foco
+    // só o texto recebe foco: a moldura e os botões do cartão não tiram o cursor de onde está
+    if (!e.target.closest('.scroll')) e.preventDefault()
   })
   el.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || e.target.closest(ctl)) return
@@ -726,6 +780,10 @@ function wire(c) {
     c.cat = c.cat === b.dataset.cat ? null : b.dataset.cat
     paintCat(c)
     save()
+  })
+  el.querySelector('.sizes').addEventListener('click', (e) => {
+    const b = e.target.closest('button')
+    if (b) setSize([c], b.dataset.s)
   })
   el.querySelector('.stash').addEventListener('click', () => stashUnit([c]))
 
@@ -900,8 +958,8 @@ function newCardAt(x, y) {
 /* Ctrl+Enter: o próximo nasce à direita; sem espaço à vista, embaixo. A mesa acompanha. */
 function spawnNextTo(c) {
   const v = viewRect()
-  let x = c.x + W + 26, y = c.y
-  if (x + W > v.x1 - 12 && c.y + 2 * H + 26 <= v.y1 - 12) { x = c.x; y = c.y + H + 26 }
+  let x = c.x + wOf(c) + 26, y = c.y
+  if (x + W > v.x1 - 12 && c.y + hOf(c) + H + 26 <= v.y1 - 12) { x = c.x; y = c.y + hOf(c) + 26 }
   const n = newCardAt(x, y)
   if (n) reveal([n])
 }
@@ -1314,7 +1372,7 @@ function layOut() {
   let row = [], x = M
   const flow = (arr) => {
     for (const p of arr) {
-      const w = p.cs.length * W + (p.cs.length - 1) * GAP
+      const w = p.cs.reduce((a, k) => a + wOf(k), 0) + (p.cs.length - 1) * GAP
       if (row.length && x + w > Math.max(innerWidth, 1120) - M) { rows.push(row); row = []; x = M }
       row.push([p, x]); x += w + GX
     }
@@ -1323,8 +1381,10 @@ function layOut() {
   }
   flow(list)
   flow(rest)
-  // a mesa rola: as fileiras nunca se sobrepõem; o que não couber na janela fica mais abaixo
-  const stepY = H + GY
+  // a mesa rola: as fileiras nunca se sobrepõem; cada uma tem a altura do seu maior cartão
+  const rowY = []
+  let yy = TOP
+  for (const r of rows) { rowY.push(yy); yy += Math.max(...r.flatMap(([p]) => p.cs.map(hOf))) + GY }
   // cada peça de vários cartões fica (ou vira) um grupo; o resto se solta
   for (const p of list) {
     let gid = null
@@ -1337,7 +1397,7 @@ function layOut() {
   }
   let n = 0
   rows.forEach((r, ri) => r.forEach(([p, x0]) => p.cs.forEach((k, i) => {
-    k.x = x0 + i * (W + GAP); k.y = TOP + ri * stepY; k.z = ++zTop
+    k.x = x0 + p.cs.slice(0, i).reduce((a, m) => a + wOf(m) + GAP, 0); k.y = rowY[ri]; k.z = ++zTop
     if (k.stashed) { k.stashed = false; k.el.classList.remove('stashed') }
     place(k); measure(k)
     if (!p.rest) n++
@@ -1693,7 +1753,9 @@ addEventListener('keydown', (e) => {
     if (m === '+' || m === '=') { e.preventDefault(); zoomBy(1.2); return }
     if (m === '-') { e.preventDefault(); zoomBy(1 / 1.2); return }
   }
-  if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.('.ProseMirror')) return
+  const typing = e.target.closest?.('.ProseMirror, input, textarea, select')
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undoMesa(); return }
+  if (e.ctrlKey || e.metaKey || e.altKey || typing) return
   const k = e.key.toLowerCase()
   if (k === 'n') { e.preventDefault(); newCardAt(...freeSpot()) }
   else if (k === 't') { e.preventDefault(); reopenLast() }
@@ -2126,6 +2188,8 @@ const SHORTCUTS = [
     ['Arrastar o fundo · roda do mouse', 'mover a mesa'],
     ['Ctrl + roda · Ctrl + e Ctrl −', 'zoom'],
     ['Ctrl+0 · Ctrl+1', 'ver todos os cartões · voltar a 100%'],
+    ['Alt+1 · Alt+2 · Alt+3', 'tamanho do cartão: P · M · G'],
+    ['Ctrl+Z (sem cursor num cartão)', 'desfaz mover, tamanho e ações em lote'],
     ['Arrastar pela faixa de cima do cartão', 'mover (o texto nunca arrasta)'],
     ['Encostar um cartão na borda de outro', 'agrupar; Shift + arrastar solta do grupo'],
     ['T', 'devolve o último cartão excluído'],
@@ -2243,7 +2307,7 @@ async function start() {
     cleanGroups(); renderGroups(); renderDock()
     // se nada do que existe aparece na janela (janela menor, câmera antiga), enquadra tudo (I1)
     const v = viewRect()
-    const seen = live().some((k) => k.x < v.x1 - 40 && k.x + W > v.x0 + 40 && k.y < v.y1 - 40 && k.y + H > v.y0 + 40)
+    const seen = live().some((k) => k.x < v.x1 - 40 && k.x + wOf(k) > v.x0 + 40 && k.y < v.y1 - 40 && k.y + hOf(k) > v.y0 + 40)
     if (live().length && !seen) fitAll({ glide: false })
   } else if (!readOnly) newCardAt(...freeSpot()) // primeira visita: um cartão em branco, cursor piscando
   ready = true

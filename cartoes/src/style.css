@@ -54,6 +54,9 @@ body.showing #zoom { visibility: hidden; }
   height: var(--H);
   will-change: transform;
 }
+/* tamanhos P e G: mesma ficha, mesma letra, mais ou menos linhas à vista */
+.card[data-s="p"] { --W: 252px; --H: 158px; }
+.card[data-s="g"] { --W: 474px; --H: 298px; }
 .card.entering { animation: enter .28s cubic-bezier(.2, .8, .25, 1) both; }
 .card.leaving  { animation: leave .2s ease-in both; pointer-events: none; }
 
@@ -119,8 +122,21 @@ body.showing #zoom { visibility: hidden; }
 }
 .card:hover .grip, .card.dragging .grip { opacity: 1; }
 
+.tools {
+  position: absolute; top: 4px; right: 6px; z-index: 2;
+  display: flex; align-items: center; gap: 8px; height: 22px;
+}
+.sizes { display: flex; gap: 6px; opacity: 0; transition: opacity .2s; }
+.card:hover .sizes { opacity: 1; }
+.sizes button {
+  min-width: 12px; padding: 0; border: 0; background: none; cursor: pointer;
+  font: italic 12px/22px var(--serif); color: rgba(90, 70, 40, .5);
+}
+.sizes button:hover { color: var(--ink); }
+.sizes button.on { color: rgba(60, 45, 25, .9); font-weight: 600; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; }
+.card[data-s="p"] .stash span { display: none; }
+.card[data-s="p"] .grip { display: none; }
 .close {
-  position: absolute; top: 4px; right: 6px;
   width: 22px; height: 22px; padding: 0;
   border: 0; background: none; cursor: pointer;
   font: 400 19px/20px var(--serif);
@@ -133,7 +149,7 @@ body.showing #zoom { visibility: hidden; }
 /* ---------- texto ---------- */
 
 .scroll {
-  position: absolute; left: 0; right: 0; top: 36px; height: 168px;
+  position: absolute; left: 0; right: 0; top: 36px; bottom: 10px;
   padding: 0 22px;
   overflow-y: auto;
   scrollbar-width: none;
@@ -262,7 +278,6 @@ body.is-empty #empty { display: flex; }
 /* ---------- guardar (azul, com bandeja; nunca parecido com excluir) ---------- */
 
 .stash {
-  position: absolute; top: 4px; right: 36px;
   height: 22px; padding: 0 2px;
   display: flex; align-items: center; gap: 4px;
   border: 0; background: none; cursor: pointer;
