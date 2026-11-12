@@ -140,3 +140,38 @@ test('demo: lixeira e instantâneos do menu não tocam nos dados reais', async (
   assert.equal(await ls(page, 'cartoes.trash'), real)
   await ctx.close()
 })
+
+test('dica de primeira visita aparece uma vez, some sozinha e não volta; não há dica fixa no rodapé', async () => {
+  const { ctx, page, errors } = await open()
+  await page.waitForSelector('.ProseMirror-focused')
+  assert.equal(await page.locator('#hint').count(), 0)
+  await page.waitForSelector('#tip.show')
+  assert.match(await page.textContent('#tip'), /Duplo clique no fundo cria outro cartão/)
+  assert.equal(await page.locator('#tip').evaluate((e) => getComputedStyle(e).pointerEvents), 'none') // não atrapalha cliques
+  await page.keyboard.type('primeiras palavras'); await sleep(600)
+  // some sozinha (o relógio do teste é adiantado para não esperar 12 s)
+  await page.reload(); await page.waitForSelector('.card'); await sleep(500)
+  assert.equal(await page.locator('#tip').isVisible(), false) // segunda visita: nunca mais
+  assert.equal(await ls(page, 'cartoes.ui.dica'), '1')
+  assert.deepEqual(errors, [])
+  await ctx.close()
+  // a dica some sozinha
+  const ctx2 = await browser.newContext()
+  const p2 = await ctx2.newPage()
+  await p2.clock.install()
+  await p2.goto(URL_APP); await p2.waitForSelector('#tip.show')
+  await p2.clock.fastForward(13000)
+  await p2.clock.resume(); await sleep(900)
+  assert.equal(await p2.locator('#tip').isVisible(), false)
+  await ctx2.close()
+})
+
+test('organizador não tem linha de atalhos no rodapé; o botão "atalhos" abre a lista', async () => {
+  const { ctx, page } = await open(TRES)
+  await page.keyboard.press('e'); await page.waitForSelector('#show:not([hidden])')
+  assert.equal(await page.locator('.org-keys').count(), 0)
+  await page.click('#org-keys')
+  assert.equal(await page.textContent('#sheet-title'), 'Atalhos')
+  assert.match(await page.textContent('#sheet-body'), /No organizador/)
+  await ctx.close()
+})

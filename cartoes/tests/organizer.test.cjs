@@ -252,3 +252,76 @@ test('#demo não toca na lixeira nem nas ordens reais', async () => {
   assert.ok(await ls(page, 'cartoes.demo.org'))
   await ctx.close()
 })
+
+/* ---------------- relato do dono de 2026-11-12 ---------------- */
+const longo = (t) => doc(t + ' começa aqui.', 'Segundo parágrafo, comprido o bastante para ocupar algumas linhas da ficha e forçar a leitura a crescer para baixo.', 'Terceiro parágrafo de ' + t + '.')
+// grupo de 5 cartões em 2 fileiras (3 + 2) e um cartão solto
+const GRUPAO = [
+  { id: 'a', x: 40, y: 80, g: 'g1', r: 0, doc: longo('alfa') }, { id: 'b', x: 398, y: 80, g: 'g1', r: 0, doc: longo('beta') }, { id: 'c', x: 756, y: 80, g: 'g1', r: 0, doc: longo('gama') },
+  { id: 'd', x: 40, y: 312, g: 'g1', r: 0, doc: longo('delta') }, { id: 'e', x: 398, y: 312, g: 'g1', r: 0, doc: longo('epsilon') },
+  { id: 'f', x: 40, y: 700, r: 0, doc: doc('solto') },
+]
+const inside = async (page) => {
+  const st = await page.locator('#stage').boundingBox()
+  const boxes = await page.$$eval('#stage .s-card', (els) => els.map((e) => { const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height } }))
+  return boxes.every((b) => b.x >= st.x - 1 && b.y >= st.y - 1 && b.x + b.w <= st.x + st.width + 1 && b.y + b.h <= st.y + st.height + 1)
+}
+
+test('organizador: um grupo grande aparece inteiro (ajustado); o zoom da leitura amplia e a área rola', async () => {
+  const { ctx, page, errors } = await open(GRUPAO)
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await organize(page)
+  assert.equal(await page.locator('#stage .s-card').count(), 5)
+  assert.ok(await inside(page), 'algum cartão do grupo ficou cortado')
+  // cada cartão do grupo mostra o texto todo, sem rolagem interna
+  assert.ok(await page.$$eval('#stage .s-body', (els) => els.every((e) => e.scrollHeight <= e.clientHeight + 1)))
+  assert.match(await page.textContent('#org-zoom'), /^ajustado · \d+%$/)
+  const w0 = (await page.locator('#stage .s-card').first().boundingBox()).width
+  // ampliar: Ctrl + "+" duas vezes; a leitura cresce e passa a rolar, sem cortar nada
+  await page.keyboard.press('Control+='); await page.keyboard.press('Control+=')
+  const w1 = (await page.locator('#stage .s-card').first().boundingBox()).width
+  assert.ok(w1 > w0 * 1.15, `não ampliou: ${w0} -> ${w1}`)
+  assert.match(await page.textContent('#org-zoom'), /^\d+%$/)
+  const sc = await page.$eval('#stage', (e) => ({ sh: e.scrollHeight, ch: e.clientHeight, sw: e.scrollWidth, cw: e.clientWidth }))
+  assert.ok(sc.sh > sc.ch || sc.sw > sc.cw, 'ampliado, deveria rolar')
+  await page.$eval('#stage', (e) => { e.scrollTop = e.scrollHeight; e.scrollLeft = e.scrollWidth })
+  const last = await page.locator('#stage .s-card').last().boundingBox(), st = await page.locator('#stage').boundingBox()
+  assert.ok(last.y + last.height <= st.y + st.height + 1, 'o fim do grupo é alcançável rolando')
+  // Ctrl + roda também; o botão volta ao ajustado
+  await page.mouse.move(st.x + st.width / 2, st.y + st.height / 2)
+  await page.keyboard.down('Control'); await page.mouse.wheel(0, 400); await page.keyboard.up('Control')
+  assert.ok((await page.locator('#stage .s-card').first().boundingBox()).width < w1)
+  await page.click('#org-zoom')
+  assert.ok(await inside(page))
+  // o zoom fixado vale para as outras peças; Ctrl+0 volta ao ajustado; a mesa não mudou de zoom
+  await page.click('#org-zoom-in'); await page.keyboard.press('ArrowRight')
+  assert.match(await page.textContent('#org-zoom'), /^\d+%$/)
+  await page.keyboard.press('Control+0')
+  assert.equal(await page.textContent('#org-zoom'), 'ajustado')
+  await page.keyboard.press('Escape')
+  assert.equal(await page.evaluate(() => new DOMMatrix(getComputedStyle(document.getElementById('world')).transform).a), 1)
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
+
+test('dispor na mesa leva o grupo como um bloco: o arranjo interno dos cartões não muda', async () => {
+  const { ctx, page, errors } = await open(GRUPAO)
+  await organize(page)
+  await page.keyboard.press('Alt+ArrowRight')       // o grupo passa para depois do cartão solto
+  assert.deepEqual(await strip(page), ['solto', 'alfa começa aqui. Segundo parágrafo, comprido o bastante para…'])
+  await page.click('#org-layout')
+  await page.waitForSelector('#show[hidden]', { state: 'attached' })
+  await flush(page)
+  const s = Object.fromEntries(JSON.parse(await ls(page, 'cartoes.v1')).map((k) => [k.id, k]))
+  const rel = (id) => [s[id].x - s.a.x, s[id].y - s.a.y]
+  assert.deepEqual(['b', 'c', 'd', 'e'].map(rel), [[358, 0], [716, 0], [0, 232], [358, 232]]) // 3 em cima, 2 embaixo, como estava
+  assert.ok(['b', 'c', 'd', 'e'].every((id) => s[id].g === s.a.g && s.a.g))
+  assert.ok(s.f.y + 214 <= s.a.y, 'o solto vem antes (o grupo, largo, desce para a fileira seguinte)')
+  assert.equal(await page.textContent('.gframe .gn'), '5 cartões')
+  // desfazer devolve tudo
+  await page.click('#toast button'); await flush(page)
+  const u = Object.fromEntries(JSON.parse(await ls(page, 'cartoes.v1')).map((k) => [k.id, k]))
+  assert.deepEqual([u.a.x, u.a.y, u.e.x, u.e.y, u.f.x, u.f.y], [40, 80, 398, 312, 40, 700])
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})

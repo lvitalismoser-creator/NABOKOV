@@ -5,7 +5,7 @@ import { keymap } from 'prosemirror-keymap'
 import { history, undo, redo } from 'prosemirror-history'
 import { baseKeymap, toggleMark } from 'prosemirror-commands'
 import { inputRules, InputRule, undoInputRule } from 'prosemirror-inputrules'
-import { toTxt, toMd, toHtml, toHtmlBody, blocksOf, fileName } from './export.js'
+import { toTxt, toMd, toHtml, toHtmlBody, fileName } from './export.js'
 
 /* ------------------------------------------------------------------ *
  *  Schema mínimo: parágrafos, negrito e itálico. Nada além disso.
@@ -84,6 +84,9 @@ function emptyDoc() {
  * ------------------------------------------------------------------ */
 const CAM_KEY = DEMO_MODE ? 'cartoes.demo.cam' : 'cartoes.ui.cam'
 const ZMIN = 0.2, ZMAX = 2
+// modo mapa: abaixo deste zoom o texto não se lê; cada cartão mostra só as primeiras palavras, grandes
+const MAP_Z = 0.45
+let mapMode = false
 const cam = { x: 0, y: 0, z: 1 }
 const zoomBtn = document.getElementById('zoom')
 let camTimer, glideTimer
@@ -96,8 +99,9 @@ function applyCam({ glide = false } = {}) {
   world.classList.toggle('gliding', glide)
   if (glide) glideTimer = setTimeout(() => world.classList.remove('gliding'), 360)
   world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.z})`
+  if ((cam.z < MAP_Z) !== mapMode) setMap(cam.z < MAP_Z)
   zoomBtn.hidden = cam.z === 1
-  zoomBtn.textContent = Math.round(cam.z * 100) + '%'
+  zoomBtn.textContent = Math.round(cam.z * 100) + '%' + (mapMode ? ' · mapa' : '')
   clearTimeout(camTimer)
   camTimer = setTimeout(() => lsSet(CAM_KEY, JSON.stringify(cam)), 250)
 }
@@ -107,6 +111,23 @@ function loadCam() {
     if (c && [c.x, c.y, c.z].every(Number.isFinite)) Object.assign(cam, { x: c.x, y: c.y, z: c.z })
   } catch {}
   applyCam()
+}
+function setMap(on) {
+  mapMode = on
+  document.body.classList.toggle('map', on)
+  if (!on) return
+  document.activeElement?.blur?.() // no mapa não se escreve
+  cards.forEach(paintMap)
+}
+function paintMap(c) {
+  c.el.querySelector('.mapface').textContent = firstWords(c, 8)
+}
+/* Clicar num cartão no mapa aproxima até ele, a 100%. */
+function zoomToCard(c) {
+  cam.z = 1
+  cam.x = innerWidth / 2 - (c.x + wOf(c) / 2)
+  cam.y = innerHeight / 2 - (c.y + hOf(c) / 2)
+  applyCam({ glide: true })
 }
 const toWorld = (sx, sy) => [(sx - cam.x) / cam.z, (sy - cam.y) / cam.z]
 /* Pedaço do mundo que a janela mostra. */
@@ -455,14 +476,15 @@ function createCard(data = {}, { focus = false, animate = false } = {}) {
     <div class="tilt">
       <i class="under u3"></i><i class="under u2"></i><i class="under u1"></i>
       <div class="paper">
-        <span class="grip"></span>
-        <span class="cats">${CATS.map((k) => `<button tabindex="-1" data-cat="${k}">${CAT_LABEL[k]}</button>`).join('')}</span>
+        <span class="grip" title="Arraste por esta faixa para mover o cartão"></span>
+        <span class="cats">${CATS.map((k) => `<button tabindex="-1" data-cat="${k}" title="Marcar como ${CAT_LABEL[k].toLowerCase()} (clique de novo para tirar)">${CAT_LABEL[k]}</button>`).join('')}</span>
         <span class="tools">
-          <span class="sizes" title="Tamanho do cartão (Alt+1, Alt+2, Alt+3)">${Object.keys(SIZES).map((k) => `<button tabindex="-1" data-s="${k}" aria-label="Tamanho ${SIZE_LABEL[k]}">${SIZE_LABEL[k]}</button>`).join('')}</span>
+          <span class="sizes">${Object.keys(SIZES).map((k) => `<button tabindex="-1" data-s="${k}" aria-label="Tamanho ${SIZE_LABEL[k]}" title="Tamanho ${{ p: 'pequeno', m: 'médio', g: 'grande' }[k]} (Alt+${{ p: 1, m: 2, g: 3 }[k]})">${SIZE_LABEL[k]}</button>`).join('')}</span>
           <button class="stash" tabindex="-1" title="Guardar na gaveta (não exclui)">${TRAY}<span>guardar</span></button>
-          <button class="close" tabindex="-1" aria-label="Excluir cartão" title="Excluir">×</button>
+          <button class="close" tabindex="-1" aria-label="Excluir cartão" title="Excluir (vai para a lixeira; dá para desfazer)">×</button>
         </span>
         <div class="scroll"><div class="mount"></div></div>
+        <div class="mapface" aria-hidden="true"></div>
       </div>
     </div>`
   c.el = el
@@ -507,11 +529,12 @@ function createCard(data = {}, { focus = false, animate = false } = {}) {
     scrollThreshold: { top: 4, bottom: 40, left: 0, right: 0 },
     dispatchTransaction(tr) {
       c.view.updateState(c.view.state.apply(tr))
-      if (tr.docChanged) { c.docJ = null; save(); measure(c) }
+      if (tr.docChanged) { c.docJ = null; save(); measure(c); if (mapMode) paintMap(c) }
     },
   })
 
   wire(c)
+  if (mapMode) paintMap(c)
   cards.set(c.id, c)
   world.appendChild(el)
   measure(c)
@@ -765,6 +788,7 @@ function startDrag(c, e, host) {
     } else if (host === c.el) {
       // clique sem arrastar: com Shift/Ctrl entra ou sai da seleção; sem, põe o cursor no cartão
       if (mod) toggleSel(c)
+      else if (mapMode) { clearSel(); zoomToCard(c) }
       else { clearSel(); c.view.focus() }
     }
   }
@@ -854,7 +878,7 @@ function deleteSel() {
   if (!ids.length) return
   const undo = once(() => {
     const back = ids.map((id) => reviveFromTrash(id, { focus: false })).filter(Boolean)
-    if (back.length) { setSel(back); reveal(back) }
+    if (back.length) { setSel(back); reveal(back); arrived(back) }
   })
   rememberMesa('excluir', undo)
   sayUndo(`${nOf(ids.length, 'cartão excluído · está', 'cartões excluídos · estão')} na lixeira`, undo)
@@ -866,7 +890,7 @@ function stashSel() {
   if (!list.length) { say('Escreva algo antes de guardar'); return }
   clearSel()
   stashUnit(list, { quiet: true })
-  const undo = once(() => { const back = list.filter((c) => cards.has(c.id) && c.stashed); if (back.length) { restoreUnit(back); setSel(back) } })
+  const undo = once(() => { const back = list.filter((c) => cards.has(c.id) && c.stashed); if (back.length) { restoreUnit(back, { quiet: true }); setSel(back) } })
   rememberMesa('guardar', undo)
   sayUndo(`${nOf(list.length, 'cartão guardado · está', 'cartões guardados · estão')} na gaveta`, undo)
 }
@@ -888,13 +912,16 @@ function wire(c) {
 
   // arrastar pela moldura (faixa de cima e margens), nunca pelo texto
   el.addEventListener('mousedown', (e) => {
+    if (mapMode) { e.preventDefault(); e.stopPropagation(); return } // no mapa o cartão inteiro é "moldura"
     // clique de seleção no texto: o editor nem fica sabendo (não move o cursor nem tira o foco de onde está)
     if (e.target.closest('.scroll') && selClick(e, c)) { e.preventDefault(); e.stopPropagation(); return }
     // só o texto recebe foco: a moldura e os botões do cartão não tiram o cursor de onde está
     if (!e.target.closest('.scroll')) e.preventDefault()
   }, true)
   el.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || e.target.closest('.close, .stash, .cats, .sizes')) return
+    if (e.button !== 0) return
+    if (mapMode) { startDrag(c, e, el); return }
+    if (e.target.closest('.close, .stash, .cats, .sizes')) return
     if (e.target.closest('.scroll')) {
       if (selClick(e, c)) { if (!blocked()) toggleSel(c) } else clearSel()
       return
@@ -968,33 +995,42 @@ function reviveFromTrash(id, { focus = true } = {}) {
 function reopenLast() {
   if (blocked()) return
   if (!trash.length) { say('A lixeira está vazia'); return }
-  reviveFromTrash()
-  say(trash.length ? `Cartão devolvido · ${trash.length} ainda na lixeira` : 'Cartão devolvido')
+  const c = reviveFromTrash()
+  if (c) arrived([c])
+  say('Cartão devolvido da lixeira · voltou para o lugar dele na mesa' + (trash.length ? ` · ${trash.length} ainda na lixeira` : ''))
 }
 
 let toastTimer
 function showUndo(snapshot) {
-  sayUndo('Cartão excluído', () => reviveFromTrash(snapshot.id))
+  sayUndo('Cartão excluído · está na lixeira (menu ≡)', () => { const c = reviveFromTrash(snapshot.id); if (c) arrived([c]) })
 }
 
-/* Aviso com um botão "desfazer" (some sozinho em 6 s). */
+/* Avisos: sempre no mesmo lugar e pelo mesmo tempo, dizendo o que aconteceu e onde a coisa
+ * está; quando dá para voltar atrás, com um botão "desfazer". */
+const TOAST_MS = 6000
 const sayUndo = (msg, fn) => sayAct(msg, 'desfazer', fn)
 function sayAct(msg, label, fn) {
-  toast.textContent = msg
+  say(msg)
   const b = document.createElement('button')
   b.textContent = label
   b.onclick = () => { toast.classList.remove('show'); fn() }
   toast.append(b)
-  toast.classList.add('show')
-  clearTimeout(toastTimer)
-  toastTimer = setTimeout(() => toast.classList.remove('show'), 6000)
 }
 
 function say(msg) {
   toast.textContent = msg
   toast.classList.add('show')
   clearTimeout(toastTimer)
-  toastTimer = setTimeout(() => toast.classList.remove('show'), 3200)
+  toastTimer = setTimeout(() => toast.classList.remove('show'), TOAST_MS)
+}
+
+/* Destaca por um instante os cartões que acabaram de voltar à mesa. */
+function arrived(list) {
+  list.forEach((k) => {
+    k.el.classList.remove('arrived'); void k.el.offsetWidth
+    k.el.classList.add('arrived')
+    setTimeout(() => k.el.classList.remove('arrived'), 1500)
+  })
 }
 
 function syncEmpty() {
@@ -1016,28 +1052,45 @@ function stashUnit(list, { quiet = false } = {}) {
   if (blocked()) return
   if (list.some((k) => isEmpty(k.view.state))) { say('Escreva algo antes de guardar'); return }
   const t = Date.now()
+  // o cartão "voa" até a gaveta, para ficar claro para onde foi
+  const d = dock.getBoundingClientRect()
+  const [tx, ty] = toWorld(d.width ? d.left + 40 : innerWidth - 90, d.width ? d.top + 20 : innerHeight - 70)
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches
   list.forEach((k, i) => {
     k.view.dom.blur()
     k.stashed = true; k.sa = t + i
     k.el.classList.add('stashing')
-    setTimeout(() => { k.el.classList.remove('stashing'); k.el.classList.add('stashed') }, 180)
+    const fly = k.el.animate([
+      { transform: `translate(${k.x}px, ${k.y}px) scale(1)`, opacity: 1 },
+      { transform: `translate(${tx}px, ${ty}px) scale(.18)`, opacity: 0.1 },
+    ], { duration: still ? 1 : 300, easing: 'cubic-bezier(.5, 0, .7, .4)' })
+    fly.onfinish = fly.oncancel = () => { k.el.classList.remove('stashing'); if (k.stashed) k.el.classList.add('stashed') }
   })
   if (list.includes(current)) { current = null; document.body.classList.remove('editing') }
   cleanGroups(); syncEmpty(); renderGroups(); renderDock(); paintSel(); save()
+  if (quiet) return
+  const undo = once(() => { const back = list.filter((c) => cards.has(c.id) && c.stashed); if (back.length) restoreUnit(back, { quiet: true }) })
+  rememberMesa('guardar', undo)
+  sayUndo((list.length > 1 ? `Grupo guardado (${list.length} cartões) · está` : 'Cartão guardado · está') + ' na gaveta, embaixo à direita', undo)
 }
 
-function restoreUnit(list) {
+function restoreUnit(list, { quiet = false } = {}) {
   if (blocked()) return
   list.forEach((k) => {
+    k.el.getAnimations().forEach((a) => a.cancel())
     k.stashed = false
-    k.el.classList.remove('stashed')
-    k.el.classList.add('entering')
-    k.el.addEventListener('animationend', () => k.el.classList.remove('entering'), { once: true })
+    k.el.classList.remove('stashed', 'stashing')
     measure(k)
   })
   bringUnitToFront(list)
   syncEmpty(); renderGroups(); renderDock(); save()
+  // mostra para onde voltou: a mesa vai até lá e o cartão pisca
   reveal(list)
+  arrived(list)
+  if (quiet) return
+  const undo = once(() => { const back = list.filter((c) => cards.has(c.id) && !c.stashed); if (back.length) stashUnit(back, { quiet: true }) })
+  rememberMesa('devolver', undo)
+  sayUndo((list.length > 1 ? `Grupo devolvido (${list.length} cartões) · voltou` : 'Cartão devolvido · voltou') + ' para o lugar dele na mesa', undo)
 }
 
 function chipOf(lead, n, extraClass = '') {
@@ -1066,11 +1119,12 @@ function renderDock() {
   if (!units.length) return
   const label = document.createElement('span')
   label.className = 'dock-label'
-  label.textContent = 'guardados'
+  label.textContent = `gaveta (${st.length})`
+  label.title = 'Cartões guardados fora da mesa; nada aqui foi excluído'
   dock.append(label)
   for (const u of units) {
     const chip = chipOf(u[0], u.length)
-    chip.title = 'Devolver ao quadro'
+    chip.title = 'Devolver à mesa, no lugar onde estava'
     chip.onclick = () => restoreUnit(u)
     dock.append(chip)
   }
@@ -1497,23 +1551,42 @@ function layOut() {
   const used = new Set(list.flatMap((p) => p.cs))
   const rest = unitsFrom(live().filter((k) => !used.has(k))).map((u) => ({ cs: u, rest: true }))
   const M = 24, TOP = 64, GX = 30, GY = 34
+  // Um grupo da mesa é levado como um bloco: os cartões guardam a posição que têm uns em
+  // relação aos outros (coluna, 2×2, o que for). Só o que não é grupo na mesa (por exemplo,
+  // um grupo separado nesta ordem e reunido depois) é posto lado a lado.
+  const shape = (p) => {
+    const g0 = p.cs[0].g
+    if (p.cs.length > 1 && g0 && p.cs.every((k) => k.g === g0)) {
+      const r = rectOf(p.cs)
+      return { w: r.x1 - r.x0, h: r.y1 - r.y0, at: p.cs.map((k) => [k, k.x - r.x0, k.y - r.y0]) }
+    }
+    let x = 0
+    const at = p.cs.map((k) => { const row = [k, x, 0]; x += wOf(k) + GAP; return row })
+    return { w: x - GAP, h: Math.max(...p.cs.map(hOf)), at }
+  }
   const rows = []
   let row = [], x = M
   const flow = (arr) => {
     for (const p of arr) {
-      const w = p.cs.reduce((a, k) => a + wOf(k), 0) + (p.cs.length - 1) * GAP
-      if (row.length && x + w > Math.max(innerWidth, 1120) - M) { rows.push(row); row = []; x = M }
-      row.push([p, x]); x += w + GX
+      const sh = shape(p)
+      if (row.length && x + sh.w > Math.max(innerWidth, 1120) - M) { rows.push(row); row = []; x = M }
+      row.push([p, x, sh]); x += sh.w + GX
     }
     if (row.length) rows.push(row)
     row = []; x = M
   }
   flow(list)
   flow(rest)
-  // a mesa rola: as fileiras nunca se sobrepõem; cada uma tem a altura do seu maior cartão
+  // a mesa rola: as fileiras nunca se sobrepõem; cada uma tem a altura da sua peça mais alta
+  // (um grupo ganha o espaço da etiqueta dele em cima)
+  const TAB = 34
   const rowY = []
   let yy = TOP
-  for (const r of rows) { rowY.push(yy); yy += Math.max(...r.flatMap(([p]) => p.cs.map(hOf))) + GY }
+  for (const r of rows) {
+    const tab = r.some(([p]) => p.cs.length > 1) ? TAB : 0
+    rowY.push(yy + tab)
+    yy += tab + Math.max(...r.map(([, , sh]) => sh.h)) + GY
+  }
   // cada peça de vários cartões fica (ou vira) um grupo; o resto se solta
   for (const p of list) {
     let gid = null
@@ -1525,8 +1598,8 @@ function layOut() {
     p.cs.forEach((k) => { k.g = gid })
   }
   let n = 0
-  rows.forEach((r, ri) => r.forEach(([p, x0]) => p.cs.forEach((k, i) => {
-    k.x = x0 + p.cs.slice(0, i).reduce((a, m) => a + wOf(m) + GAP, 0); k.y = rowY[ri]; k.z = ++zTop
+  rows.forEach((r, ri) => r.forEach(([p, x0, sh]) => sh.at.forEach(([k, dx, dy]) => {
+    k.x = x0 + dx; k.y = rowY[ri] + dy; k.z = ++zTop
     if (k.stashed) { k.stashed = false; k.el.classList.remove('stashed') }
     place(k); measure(k)
     if (!p.rest) n++
@@ -1607,6 +1680,41 @@ function slideOf(p, i) {
   return wrap
 }
 
+/* Zoom da leitura no organizador. null = "ajustado": a peça inteira cabe na área de leitura
+ * (um grupo grande encolhe até caber). Um número fixa o zoom; o que passar da área, rola. */
+const ORG_ZMIN = 0.3, ORG_ZMAX = 2.5, ORG_FIT_MIN = 0.55
+let orgZoom = null
+const orgZoomBtn = document.getElementById('org-zoom')
+function fitStage() {
+  const s = stage.querySelector('.slide')
+  if (!s) { orgZoomBtn.textContent = 'ajustado'; return }
+  s.style.zoom = 1
+  let z = orgZoom
+  if (z == null) {
+    // tamanho natural da peça contra o espaço livre; nunca amplia sozinho
+    // (não encolhe abaixo de 55%, para a letra continuar legível: daí em diante, a leitura rola)
+    z = clamp(Math.min(1, (stage.clientWidth - 16) / s.scrollWidth, (stage.clientHeight - 16) / s.scrollHeight), ORG_FIT_MIN, 1)
+  }
+  s.style.zoom = z
+  s.dataset.zoom = z.toFixed(3)
+  orgZoomBtn.textContent = orgZoom == null ? (z < 0.995 ? `ajustado · ${Math.round(z * 100)}%` : 'ajustado') : Math.round(z * 100) + '%'
+  orgZoomBtn.classList.toggle('fixed', orgZoom != null)
+}
+function setOrgZoom(z) {
+  orgZoom = z == null ? null : clamp(Math.round(z * 20) / 20, ORG_ZMIN, ORG_ZMAX)
+  fitStage()
+}
+const curOrgZoom = () => Number(stage.querySelector('.slide')?.dataset.zoom) || 1
+orgZoomBtn.onclick = () => setOrgZoom(null)
+document.getElementById('org-zoom-out').onclick = () => setOrgZoom(curOrgZoom() - 0.1)
+document.getElementById('org-zoom-in').onclick = () => setOrgZoom(curOrgZoom() + 0.1)
+stage.addEventListener('wheel', (e) => {
+  if (!(e.ctrlKey || e.metaKey)) return // sem Ctrl, a roda rola a leitura
+  e.preventDefault()
+  setOrgZoom(curOrgZoom() * Math.exp(-e.deltaY * 0.0016))
+}, { passive: false })
+addEventListener('resize', () => { if (!show.hidden) fitStage() })
+
 function renderStage(dir) {
   if (!P.length) {
     const e = document.createElement('div')
@@ -1618,6 +1726,8 @@ function renderStage(dir) {
   const s = slideOf(P[idx], idx)
   if (dir) s.classList.add('in-' + dir)
   stage.replaceChildren(s)
+  stage.scrollTop = 0; stage.scrollLeft = 0
+  fitStage()
 }
 
 function chipFor(unit, extra = '') {
@@ -1715,6 +1825,7 @@ let notesOpen = lsGet('cartoes.ui.notas') === '1'
 function toggleNotes(v = !notesOpen) {
   notesOpen = v
   show.classList.toggle('notes-open', v)
+  fitStage()
   lsSet('cartoes.ui.notas', v ? '1' : '0')
   if (v) setTimeout(() => notePiece.focus(), 0)
 }
@@ -1821,6 +1932,7 @@ document.getElementById('show-close').onclick = closeOrg
 document.getElementById('show-again').onclick = shuffleOrder
 document.getElementById('org-layout').onclick = layOut
 notesBtn.onclick = () => toggleNotes()
+document.getElementById('org-keys').onclick = () => openShortcuts()
 saveBtn.onclick = saveOrder
 document.getElementById('prev').onclick = () => go(idx - 1)
 document.getElementById('next').onclick = () => go(idx + 1)
@@ -1835,6 +1947,9 @@ function orgKey(e) {
   if (e.ctrlKey || e.metaKey) {
     if (low === 'z' && !e.shiftKey) undoOrg()
     else if ((low === 'z' && e.shiftKey) || low === 'y') redoOrg()
+    else if (k === '+' || k === '=') setOrgZoom(curOrgZoom() + 0.1)
+    else if (k === '-') setOrgZoom(curOrgZoom() - 0.1)
+    else if (k === '0') setOrgZoom(null)
     else if (low === 's') saveOrder()
     else return
   } else if (e.altKey) {
@@ -1912,7 +2027,7 @@ function exportJSON() {
   a.download = `cartoes-${new Date().toISOString().slice(0, 10)}.json`
   document.body.append(a); a.click(); a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
-  say(`Exportei ${cards.size} cartão(ões)`)
+  say(`Backup feito (${nCards(cards.size)}) · ` + (disk ? 'escolha onde guardar o arquivo .json' : 'o arquivo .json está na pasta de downloads'))
 }
 
 function importCards(text) {
@@ -1945,7 +2060,7 @@ function importCards(text) {
     nOrd++
   }
   cleanGroups(); renderGroups(); renderDock(); syncEmpty(); save()
-  say(`${good.length} cartão(ões) importado(s)` + (nOrd ? ` · ${nOrd} ordem(ns)` : '') + (bad ? ` · ${bad} ignorado(s)` : ''))
+  say(`${nOf(good.length, 'cartão importado · está', 'cartões importados · estão')} na mesa` + (nOrd ? ` · ${nOf(nOrd, 'ordem', 'ordens')} no organizador` : '') + (bad ? ` · ${nOf(bad, 'ignorado', 'ignorados')}` : ''))
   return good.length
 }
 
@@ -2279,7 +2394,7 @@ function openExport() {
   acts.append(go, cancel)
   left.append(acts)
 
-  right.append(elt('div', 'exp-label', 'pré-visualização (começo do documento)'))
+  right.append(elt('div', 'exp-label', 'pré-visualização (o documento inteiro; role para ver)'))
   const pv = elt('div', 'exp-preview'); pv.id = 'exp-preview'
   right.append(pv)
   body.append(left, right)
@@ -2295,17 +2410,16 @@ function openExport() {
     pv.className = 'exp-preview ' + st.format
     pv.replaceChildren()
     if (!n) { pv.append(elt('p', 'sheet-empty', 'Não há cartões escritos nesta leitura.')); return }
-    const total = blocksOf(data, st.model).length, MAX = 9
+    // o documento inteiro, com rolagem: o que se vê aqui é o que vai para o arquivo
     if (st.format === 'pdf') {
       const page = elt('div', 'pv-page')
       // miolo montado por toHtmlBody, que escapa todo o texto do usuário
-      page.innerHTML = toHtmlBody(data, st.model, MAX)
+      page.innerHTML = toHtmlBody(data, st.model)
       pv.append(page)
     } else {
-      const text = renderExport(data, st.model, st.format)
-      pv.append(elt('pre', null, text.split('\n').slice(0, 22).join('\n')))
+      pv.append(elt('pre', null, renderExport(data, st.model, st.format)))
     }
-    if (total > MAX) pv.append(elt('div', 'pv-more', '… o documento continua'))
+    pv.scrollTop = 0
   }
   sel.onchange = () => { st.src = sel.value; draw() }
   go.onclick = async () => {
@@ -2324,6 +2438,7 @@ const SHORTCUTS = [
     ['Arrastar o fundo · roda do mouse', 'mover a mesa'],
     ['Ctrl + roda · Ctrl + e Ctrl −', 'zoom'],
     ['Ctrl+0 · Ctrl+1', 'ver todos os cartões · voltar a 100%'],
+    ['Zoom abaixo de 45%', 'modo mapa: só as primeiras palavras; clicar num cartão aproxima até ele'],
     ['Shift + arrastar no fundo', 'seleciona os cartões dentro da caixa'],
     ['Shift ou Ctrl + clique num cartão', 'põe ou tira da seleção; arrastar um selecionado move todos'],
     ['Delete · Esc (com seleção)', 'exclui os selecionados · solta a seleção'],
@@ -2351,6 +2466,7 @@ const SHORTCUTS = [
     ['← →', 'ler a peça anterior · a próxima'],
     ['Alt + ← →', 'mover a peça'],
     ['↑ · ↓', 'pôr de lado · devolver à leitura'],
+    ['Ctrl + roda · Ctrl + e Ctrl − · Ctrl+0', 'zoom da leitura · voltar ao ajustado (a peça inteira cabe)'],
     ['R', 'embaralhar'],
     ['C', 'notas'],
     ['Ctrl+S', 'salvar a ordem com um nome'],
@@ -2425,6 +2541,19 @@ async function claimWriter() {
   } catch { readOnly = false }
 }
 
+/* Dica de primeira visita: uma vez só, fora do cartão, e some sozinha. */
+const TIP_KEY = 'cartoes.ui.dica'
+function firstTip() {
+  if (lsGet(TIP_KEY)) return
+  lsSet(TIP_KEY, '1')
+  const tip = document.getElementById('tip')
+  tip.textContent = 'É só escrever. Duplo clique no fundo cria outro cartão · o menu ≡ tem os atalhos'
+  tip.hidden = false
+  requestAnimationFrame(() => tip.classList.add('show'))
+  const bye = () => { tip.classList.remove('show'); setTimeout(() => { tip.hidden = true }, 700) }
+  setTimeout(bye, 12000)
+}
+
 async function start() {
   await claimWriter()
   db = await idbOpen()
@@ -2448,7 +2577,10 @@ async function start() {
     const v = viewRect()
     const seen = live().some((k) => k.x < v.x1 - 40 && k.x + wOf(k) > v.x0 + 40 && k.y < v.y1 - 40 && k.y + hOf(k) > v.y0 + 40)
     if (live().length && !seen) fitAll({ glide: false })
-  } else if (!readOnly) newCardAt(...freeSpot()) // primeira visita: um cartão em branco, cursor piscando
+  } else if (!readOnly) {
+    newCardAt(...freeSpot()) // primeira visita: um cartão em branco, cursor piscando
+    firstTip()
+  }
   ready = true
   paintSaved(readOnly ? 'ro' : 'saved')
   if (readOnly) {

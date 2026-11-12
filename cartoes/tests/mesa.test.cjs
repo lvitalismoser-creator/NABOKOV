@@ -475,3 +475,146 @@ test('seleção: excluir, guardar e tamanho em lote, cada um com desfazer', asyn
   assert.deepEqual(errors, [])
   await ctx.close()
 })
+
+/* ---------------- Fase 7b: modo mapa ---------------- */
+async function zoomOut(page, x = 640, y = 400) {
+  await page.mouse.move(x, y)
+  await page.keyboard.down('Control'); await page.mouse.wheel(0, 700); await page.keyboard.up('Control')
+  await sleep(100)
+}
+
+test('modo mapa: abaixo de 45% cada cartão mostra as primeiras palavras e a cor da categoria; clicar aproxima', async () => {
+  const MAPA = [card('a', 100, 120, 'A chuva começa antes de o personagem acordar e não para mais', { cat: 'cena' }), card('b', 700, 420, 'beta')]
+  const { ctx, page, errors } = await open(MAPA)
+  const antes = await ls(page, 'cartoes.v1')
+  assert.equal(await page.locator('.mapface').first().isVisible(), false)
+  assert.equal(await page.evaluate(() => document.body.classList.contains('map')), false)
+  await zoomOut(page)
+  const z = (await camOf(page)).z
+  assert.ok(z < 0.45, 'zoom ' + z)
+  assert.equal(await page.evaluate(() => document.body.classList.contains('map')), true)
+  const face = page.locator('.card', { hasText: 'A chuva' }).locator('.mapface')
+  assert.equal(await face.isVisible(), true)
+  assert.equal(await face.textContent(), 'A chuva começa antes de o personagem acordar…')
+  assert.ok(await face.evaluate((e) => parseFloat(getComputedStyle(e).fontSize)) * z >= 13, 'letra legível no mapa')
+  assert.equal(await page.locator('.card .scroll').first().isVisible(), false) // o texto miúdo some
+  assert.equal(await page.locator('.card', { hasText: 'A chuva' }).locator('.paper').evaluate((e) => getComputedStyle(e, '::before').backgroundColor), 'rgb(181, 72, 58)')
+  assert.match(await page.textContent('#zoom'), /% · mapa$/)
+  // clicar no cartão (em qualquer ponto) aproxima até ele, a 100%, sem pôr o cursor nem mexer nos dados
+  const b = await box(page, 'beta')
+  await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2); await sleep(500)
+  assert.equal((await camOf(page)).z, 1)
+  assert.equal(await page.evaluate(() => document.body.classList.contains('map')), false)
+  const nb = await box(page, 'beta')
+  assert.ok(near(nb.x + nb.width / 2, 640, 2) && near(nb.y + nb.height / 2, 400, 2), 'centrado: ' + JSON.stringify(nb))
+  assert.equal(await page.locator('.card .scroll').first().isVisible(), true)
+  await page.evaluate(() => dispatchEvent(new Event('pagehide')))
+  assert.equal(await ls(page, 'cartoes.v1'), antes)
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
+
+test('modo mapa: arrasta-se o cartão por qualquer ponto; seleção funciona; entrar no mapa tira o cursor sem perder texto', async () => {
+  const { ctx, page, errors } = await open(DOIS)
+  await page.locator('.card', { hasText: 'alfa' }).locator('.ProseMirror').click()
+  await page.keyboard.press('End'); await page.keyboard.type(' com mais texto')
+  await zoomOut(page)
+  const z = (await camOf(page)).z
+  assert.equal(await page.locator('.ProseMirror-focused').count(), 0)
+  assert.equal(await page.locator('.card', { hasText: 'alfa' }).locator('.mapface').textContent(), 'alfa com mais texto')
+  let s = await saved(page)
+  const x0 = s.b.x, y0 = s.b.y
+  const b = await box(page, 'beta')
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height * 0.6); await page.mouse.down() // no meio do "texto"
+  await page.mouse.move(b.x + b.width / 2 + 60, b.y + b.height * 0.6 + 30, { steps: 8 }); await page.mouse.up()
+  s = await saved(page)
+  assert.ok(near(s.b.x, x0 + 60 / z, 1.5) && near(s.b.y, y0 + 30 / z, 1.5), JSON.stringify([s.b.x, s.b.y, z]))
+  assert.equal((await camOf(page)).z, z)           // arrastar não é clique: continua no mapa
+  const a = await box(page, 'alfa')
+  await page.keyboard.down('Shift'); await page.mouse.click(a.x + a.width / 2, a.y + a.height / 2); await page.keyboard.up('Shift')
+  assert.equal(await page.locator('.card.selected').count(), 1)
+  assert.equal((await camOf(page)).z, z)
+  assert.match(JSON.stringify(s.a.doc), /alfa com mais texto/)
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
+
+/* ---------------- Fase 8: o que é clicável ---------------- */
+test('moldura: invisível fora do foco, levemente visível só no cartão com foco; mão de arrastar; controles com rótulo', async () => {
+  const { ctx, page, errors } = await open(DOIS)
+  const band = (text) => page.locator('.card', { hasText: text }).locator('.paper').evaluate((e) => getComputedStyle(e, '::after').opacity)
+  const grip = (text) => page.locator('.card', { hasText: text }).locator('.grip').evaluate((e) => getComputedStyle(e).opacity)
+  await page.mouse.move(5, 5); await sleep(350)
+  assert.equal(await band('alfa'), '0'); assert.equal(await grip('alfa'), '0') // zero poluição por padrão
+  await page.locator('.card', { hasText: 'alfa' }).locator('.ProseMirror').click()
+  await page.mouse.move(5, 5); await sleep(400)
+  assert.equal(await band('alfa'), '1'); assert.ok(Number(await grip('alfa')) > 0.5)
+  assert.equal(await band('beta'), '0'); assert.equal(await grip('beta'), '0') // só o do foco
+  assert.equal(await page.locator('.card .paper').first().evaluate((e) => getComputedStyle(e).cursor), 'grab')
+  assert.equal(await page.locator('.card .scroll').first().evaluate((e) => getComputedStyle(e).cursor), 'text')
+  // todo controle do cartão diz o que faz e tem alvo de pelo menos 20 px de altura
+  const ctl = await page.$$eval('.card:first-child .cats button, .card:first-child .sizes button, .card:first-child .stash, .card:first-child .close',
+    (els) => els.map((e) => ({ t: e.title, h: e.getBoundingClientRect().height })))
+  assert.equal(ctl.length, 8)
+  for (const c of ctl) { assert.ok(c.t.length > 5, 'sem rótulo'); assert.ok(c.h >= 20, 'alvo baixo: ' + c.h) }
+  await page.keyboard.press('Escape'); await sleep(400)
+  assert.equal(await band('alfa'), '0')
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
+
+/* ---------------- Fase 8: avisos e gaveta ---------------- */
+test('gaveta: rótulo com a contagem, aviso diz onde o cartão está, desfazer; devolver destaca o cartão e leva a mesa até ele', async () => {
+  const { ctx, page, errors } = await open([card('a', 100, 120, 'alfa'), card('b', 2400, 1500, 'beta'), card('c', 520, 120, 'gama')])
+  const stash = async (text) => { const c = page.locator('.card', { hasText: text }); await c.hover(); await c.locator('.stash').click(); await sleep(450) }
+  await stash('alfa')
+  assert.equal(await page.textContent('#toast'), 'Cartão guardado · está na gaveta, embaixo à direitadesfazer')
+  assert.equal(await page.textContent('.dock-label'), 'gaveta (1)')
+  assert.deepEqual(await texts(page), ['beta', 'gama'])
+  await page.click('#toast button'); await sleep(300)   // desfazer
+  assert.equal(await page.locator('#dock .chip').count(), 0)
+  assert.deepEqual((await texts(page)).sort(), ['alfa', 'beta', 'gama'])
+  await stash('alfa'); await stash('gama')
+  assert.equal(await page.textContent('.dock-label'), 'gaveta (2)')
+  // devolver: aviso, destaque e, se estiver fora da vista, a mesa vai até o cartão
+  await page.keyboard.press('Control+0'); await sleep(450) // enquadra "beta", o único na mesa, lá longe
+  await page.click('#dock .chip >> nth=0'); await sleep(500)
+  assert.equal(await page.textContent('#toast'), 'Cartão devolvido · voltou para o lugar dele na mesadesfazer')
+  assert.equal(await page.locator('.card.arrived').count(), 1)
+  const b = await box(page, 'alfa')
+  assert.ok(b.x >= 0 && b.y >= 0 && b.x + b.width <= 1280 && b.y + b.height <= 800, JSON.stringify(b))
+  const s = await saved(page)
+  assert.deepEqual([s.a.x, s.a.y, s.a.stashed], [100, 120, false])
+  await page.keyboard.press('Control+z'); await sleep(450) // o desfazer da mesa guarda de novo
+  assert.equal(await page.textContent('.dock-label'), 'gaveta (2)')
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
+
+test('avisos: mesmo lugar e mesmo tempo, dizendo o que aconteceu e onde está', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  const page = await ctx.newPage()
+  await seed(page, { 'cartoes.v1': JSON.stringify(DOIS), 'cartoes.v1.t': String(Date.now() - 1000) })
+  await page.clock.install()
+  await page.goto(URL_APP); await page.waitForSelector('.card')
+  await page.addStyleTag({ content: '#toast { transition: none !important; }' }) // mede a posição final, não o meio da animação
+  const shown = () => page.locator('#toast').evaluate((e) => e.classList.contains('show'))
+  const pos = () => page.locator('#toast').evaluate((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.bottom)] })
+  const seen = []
+  const check = async (re) => {
+    assert.match(await page.textContent('#toast'), re)
+    assert.equal(await shown(), true)
+    await page.clock.runFor(400); seen.push(await pos())
+    await page.clock.runFor(5300); assert.equal(await shown(), true, 'sumiu cedo: ' + re)
+    await page.clock.runFor(600); assert.equal(await shown(), false, 'ficou demais: ' + re)
+  }
+  await page.keyboard.press('t')                    // aviso simples
+  await check(/A lixeira está vazia/)
+  const c = page.locator('.card', { hasText: 'alfa' })
+  await c.hover(); await c.locator('.close').click() // aviso com desfazer
+  await check(/^Cartão excluído · está na lixeira \(menu ≡\)desfazer$/)
+  await page.keyboard.press('t')
+  await check(/^Cartão devolvido da lixeira · voltou para o lugar dele na mesa$/)
+  for (const p of seen) assert.ok(Math.abs(p[0] - seen[0][0]) <= 1 && Math.abs(p[1] - seen[0][1]) <= 1, 'os avisos aparecem sempre no mesmo lugar: ' + JSON.stringify(seen))
+  await ctx.close()
+})

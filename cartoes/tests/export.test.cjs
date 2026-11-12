@@ -120,3 +120,23 @@ test('janela Exportar: escolhe ordem, modelo e formato, mostra a prévia e baixa
   assert.deepEqual(errors, [])
   await ctx.close()
 })
+
+test('a prévia do exportador mostra o documento inteiro, com rolagem', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  const page = await ctx.newPage()
+  const muitos = Array.from({ length: 30 }, (_, i) => ({ id: 'k' + i, x: 40 + (i % 3) * 380, y: 80 + Math.floor(i / 3) * 250, doc: docOf(para(t(`Cartão número ${i + 1} do documento.`))) }))
+  await seed(page, { 'cartoes.v1': JSON.stringify(muitos), 'cartoes.v1.t': String(Date.now()) })
+  await page.goto(URL_APP); await sleep(400)
+  await page.keyboard.press('Control+e')
+  for (const [format, sel] of [['pdf', '.pv-page'], ['txt', 'pre'], ['md', 'pre']]) {
+    await page.click(`.exp-choice button[data-v="${format}"]`)
+    const txt = await page.textContent('#exp-preview ' + sel)
+    assert.ok(txt.includes('Cartão número 1 do documento.') && txt.includes('Cartão número 30 do documento.'), format + ': a prévia não vai até o fim')
+    assert.ok(await page.$eval('#exp-preview', (e) => e.scrollHeight > e.clientHeight && getComputedStyle(e).overflowY === 'auto'), format + ': deveria rolar')
+  }
+  assert.equal(await page.locator('.pv-more').count(), 0)
+  // a prévia é o próprio documento
+  await page.click('.exp-choice button[data-v="txt"]'); await page.click('.exp-choice button[data-v="corrido"]')
+  assert.equal(await page.textContent('#exp-preview pre'), await page.evaluate(() => cartoes.exportText('mesa', 'corrido', 'txt')))
+  await ctx.close()
+})

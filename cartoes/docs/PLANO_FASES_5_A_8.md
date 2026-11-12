@@ -124,7 +124,19 @@ Instalador: `Cartoes-Setup-1.2.0.exe`. Vira ✅ quando o dono instalar e conferi
 - **"Dispor na mesa"** não sobrepõe mais as fileiras: o que não cabe na janela fica mais abaixo.
 - **Testes:** 5 escritos antes de mexer no arrasto e no ímã, mais 7 da câmera. Total: 55, todos passando.
 
-### Fase 7b — Tamanhos, seleção e modo mapa
+### Fase 7b — Tamanhos, seleção e modo mapa — feita em 2026-11-12, aguardando conferência do dono
+
+Instalador: `Cartoes-Setup-1.3.0.exe`. Vira ✅ quando o dono instalar e conferir.
+
+**Como ficou:**
+
+- **Tamanhos P/M/G** na proporção de ficha: 252×158, 340×214 e 474×298, com 4, 6 e 9 linhas de pauta. A letra é a mesma; muda quanto texto aparece. Botões `P M G` no hover do cartão e `Alt+1/2/3`. Ímã, moldura de grupo e "dispor na mesa" respeitam tamanhos mistos.
+- **Seleção múltipla:** `Shift`+arrastar no fundo desenha a caixa; `Shift`/`Ctrl`+clique põe ou tira um cartão. Arrastar um selecionado move todos. A barra da seleção oferece tamanho, guardar e excluir; `Delete` exclui e `Esc` solta.
+- **Desfazer:** as ações em lote mostram "desfazer" no aviso, e `Ctrl+Z` sem cursor num cartão desfaz mover, mudar de tamanho, guardar e excluir em lote.
+- **Modo mapa** abaixo de 45%: primeiras palavras em letra grande e faixa na cor da categoria; clicar num cartão aproxima até ele, a 100%.
+- **De carona:** os botões do cartão não roubam mais o foco do texto; a pilha só aparece quando sobra texto de verdade (antes, um cartão cheio até a última linha já mostrava a pilha).
+- **Testes:** 9 novos. Total: 64, todos passando.
+
 
 Plano original (7a + 7b):
 
@@ -138,7 +150,26 @@ Plano original (7a + 7b):
 - De carona: I2/I3 (grupo parcialmente guardado).
 - **Testes:** pan/zoom não altera os dados; ímã com tamanhos mistos; seleção em lote; abrir em janela menor.
 
-## Fase 8 — Revisão de interface
+## Fase 8 — Revisão de interface — feita em 2026-11-12, aguardando conferência do dono
+
+Instalador: `Cartoes-Setup-1.4.0.exe`. Vira ✅ quando o dono instalar e conferir. A janela de validação (2 semanas, `PLANO_AJUSTES_ABORDAGEM.md`) começa quando ele instalar esta versão.
+
+**Como ficou:**
+
+- **O que é clicável.** A faixa de arrasto e a pega ficam levemente visíveis no cartão com foco (exceção registrada no Conceito); fora do foco, nada. Os controles do cartão ficaram mais legíveis e todos dizem o que fazem no hover.
+- **Dica fixa do rodapé saiu.** Na primeira visita aparece uma dica, uma vez só, que some em 12 s. Os atalhos estão no menu ≡ (F1).
+- **`.org-keys` saiu** (decisão tomada sem o dono: era a mesma "dica fixa" de que ele reclamou). No lugar, o botão "atalhos" no topo do organizador.
+- **Avisos** sempre no mesmo lugar, por 6 s, no formato "o que aconteceu · onde está" e com "desfazer" quando dá.
+- **Gaveta:** rótulo "gaveta (N)"; ao guardar, o cartão voa até ela; ao devolver, a mesa vai até o cartão e ele pisca.
+- **Passe de crítica:** contraste medido em todos os controles (4,5:1 ou mais) e alvos de pelo menos 20 px de altura.
+- **Relato do dono de 12-11 (testes num `index.html` intermediário), corrigido nesta fase:**
+  1. No organizador, um grupo grande ficava cortado. Agora a peça inteira cabe por padrão ("ajustado") e a leitura tem zoom próprio, com rolagem.
+  2. "Dispor na mesa" desmanchava o arranjo interno dos grupos. Agora cada grupo vai como um bloco.
+  3. A prévia do exportador mostrava só o começo. Agora mostra o documento inteiro.
+- **Testes:** 8 novos. Total: 72, todos passando.
+
+Plano original:
+
 
 - **"O que é clicável":** cursor de mão na moldura, borda de arrasto levemente visível no cartão com foco, controles maiores e com rótulo no hover.
 - **Dica fixa do rodapé sai.** Entram uma dica de primeira visita (some sozinha) e "Atalhos" no menu ≡.

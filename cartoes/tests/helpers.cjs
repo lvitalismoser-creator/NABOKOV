@@ -36,16 +36,15 @@ const idbState = (page) => page.evaluate(() => new Promise((res) => {
   r.onerror = () => res(null)
 }))
 
-/** Grava dados no localStorage antes da página carregar, uma única vez por aba.
- *  A marca fica em window.name, que acompanha a aba e não depende do armazenamento:
- *  num recarregamento muito rápido o script de preparação às vezes enxerga o
- *  sessionStorage/localStorage ainda vazios e regravava os dados iniciais por cima
- *  do que o teste tinha feito. */
-const seed = (page, entries) => page.addInitScript((e) => {
-  if (window.name === '__seeded' || localStorage.getItem('__seeded')) return
-  window.name = '__seeded'
-  localStorage.setItem('__seeded', '1')
-  for (const [k, v] of Object.entries(e)) localStorage.setItem(k, v)
-}, entries)
+/** Grava dados no localStorage antes de o app abrir.
+ *  Abre uma página em branco da mesma origem (file://), grava e sai: nenhum script
+ *  de preparação fica na aba. (Um addInitScript que toca no localStorage enxerga o
+ *  armazenamento vazio em recarregamentos rápidos e faz a página perder o que acabou
+ *  de gravar; isso só acontece no Playwright.) */
+const URL_BLANK = 'file:///' + path.join(__dirname, 'blank.html').split('\\').join('/')
+const seed = async (page, entries) => {
+  await page.goto(URL_BLANK)
+  await page.evaluate((e) => { for (const [k, v] of Object.entries(e)) localStorage.setItem(k, v) }, entries)
+}
 
 module.exports = { ROOT, URL_APP, sleep, eventually, doc, texts, ls, idbState, seed }
