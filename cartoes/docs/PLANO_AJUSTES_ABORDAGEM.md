@@ -103,6 +103,8 @@ Como no plano original: Exportar…, Importar backup…, Fazer backup (.json), L
 
 ## Fase 8 — Revisão de interface
 
+> **Estado (2026-11-12):** feita, aguardando conferência do dono no instalador 1.4.0. A linha `.org-keys` saiu (virou o botão "atalhos"). Detalhes em `PLANO_FASES_5_A_8.md`.
+
 Como no plano original, incluindo a decisão sobre a linha de atalhos `.org-keys`. A moldura no foco segue como exceção registrada.
 
 **Fecha a Fase 8:** testes, instalador e conferência do dono.
@@ -136,9 +138,12 @@ Como no plano original, incluindo a decisão sobre a linha de atalhos `.org-keys
 
 ## Pendências ainda abertas
 
+- **Conferência do dono** nos instaladores 1.1.0 (Fase 6), 1.2.0 (7a), 1.3.0 (7b) e 1.4.0 (8). O 1.4.0 contém tudo: conferir só ele basta para as quatro fases.
+- **Validação:** começa quando o dono instalar o 1.4.0.
 - DOCX/ODT à mão ou com biblioteca: só depois da validação.
-- `.org-keys` fica ou sai: Fase 8.
-- Escuta sobre o organizador: entra pelo diário a partir da Fase 6.
+- ~~`.org-keys` fica ou sai: Fase 8.~~ Saiu (2026-11-12), a confirmar com o dono.
+- Escuta sobre o organizador: entra pelo diário (`USO.md`).
+- Perguntas ao dono e decisões tomadas sem ele: `HANDOFF_2026-11-12.md`.
 
 ## Riscos assumidos
 
