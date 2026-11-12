@@ -36,10 +36,15 @@ const idbState = (page) => page.evaluate(() => new Promise((res) => {
   r.onerror = () => res(null)
 }))
 
-/** Grava dados no localStorage antes da página carregar, uma única vez por aba. */
+/** Grava dados no localStorage antes da página carregar, uma única vez por aba.
+ *  A marca fica em window.name, que acompanha a aba e não depende do armazenamento:
+ *  num recarregamento muito rápido o script de preparação às vezes enxerga o
+ *  sessionStorage/localStorage ainda vazios e regravava os dados iniciais por cima
+ *  do que o teste tinha feito. */
 const seed = (page, entries) => page.addInitScript((e) => {
-  if (sessionStorage.getItem('__seeded')) return
-  sessionStorage.setItem('__seeded', '1')
+  if (window.name === '__seeded' || localStorage.getItem('__seeded')) return
+  window.name = '__seeded'
+  localStorage.setItem('__seeded', '1')
   for (const [k, v] of Object.entries(e)) localStorage.setItem(k, v)
 }, entries)
 

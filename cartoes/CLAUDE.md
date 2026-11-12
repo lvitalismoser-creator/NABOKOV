@@ -6,15 +6,20 @@ Programa desktop para escritores: editor de texto com organização integrada, i
 
 ## Estado atual
 
-App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), lixeira, exportar/importar e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 27 testes automatizados (`npm test`). Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
+App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), pontinho de salvo, menu ≡ (lixeira, instantâneos, atalhos) e exportação TXT/MD/PDF (Fase 6), mesa infinita com deslocamento e zoom (Fase 7a), lixeira, backup `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 55 testes automatizados (`npm test`). Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
+
+O estado de cada fase (feita / aguardando conferência do dono) fica em `docs/PLANO_FASES_5_A_8.md`.
 
 Documentos de contexto, em `docs/`:
 
-- `docs/PLANO_FASES_5_A_8.md`: plano vigente e pendências para confirmar.
-- `docs/HANDOFF_2026-11-03.md`: registro da última sessão (Fase 5 e instalador), decisões tomadas sozinho e armadilhas.
+- `docs/PLANO_AJUSTES_ABORDAGEM.md`: ajustes de 2026-11-11 (ordem das fases, como fechar uma fase, validação). **Vale sobre os outros planos.**
+- `docs/PLANO_FASES_5_A_8.md`: plano das fases e decisões de produto.
+- `docs/USO.md`: diário de uso (o dono anota quando quiser; o Claude pergunta no início de cada sessão e completa).
+- `docs/HANDOFF_*.md`: registros de sessões passadas (histórico; não são atualizados).
 - `docs/REVISAO_E_PLANO_SALVAMENTO.md`: histórico da revisão e do plano de salvamento (Fases 0–4).
 
-- `src/main.js`: lógica (ProseMirror, quadro, arrasto, persistência, demo)
+- `src/main.js`: lógica (ProseMirror, quadro, arrasto, persistência, organizador, menu, janela de exportar, demo)
+- `src/export.js`: funções puras que montam o documento exportado (TXT, MD e o HTML do PDF)
 - `src/style.css`: todo o visual
 - `src/template.html`: casca HTML com marcadores `/*__CSS__*/` e `/*__JS__*/`
 - `build.mjs`: empacota tudo em `index.html` (esbuild, um arquivo, funciona offline)
@@ -37,13 +42,29 @@ Abrir `index.html#demo` carrega cartões de exemplo (inclui um com estouro de te
 6. **Estilo papel:** ficha com linha vermelha no topo, pauta azul, textura, leve inclinação por cartão (endireita no foco), fonte serifada. Sem fontes externas.
 7. **Arrastar só pela moldura** (faixa superior), nunca pelo texto, para não conflitar com seleção.
 
+### Exceções decididas pelo dono
+
+Só estas três são aceitas. Qualquer outro elemento visível por padrão continua errado.
+
+| Exceção | Toca o item | Decidida em | Motivo | Entra na |
+|---|---|---|---|---|
+| Tamanhos P/M/G, sempre na proporção de ficha | 1 (tamanho fixo) | 2026-11-03, registrada em 2026-11-11 | O dono pediu redimensionar; três tamanhos fixos dão a escolha sem abrir a porta para ajuste fino, que aumentaria a carga cognitiva. Dentro de cada tamanho o cartão continua fixo: não cresce nem bloqueia a digitação. | Fase 7b |
+| Pontinho de salvo sempre visível (no canto da mesa, fora do cartão) | 3 (zero poluição visual) | 2026-11-03, registrada em 2026-11-11 | O salvamento era invisível e só aparecia quando falhava; o dono quer a confirmação à vista. | Fase 6 |
+| Moldura levemente visível só no cartão com foco | 3 (controles só no hover) | 2026-11-11 | O dono não sabia o que era clicável nem por onde arrastar. Fora do foco nada muda. | Fase 8 |
+
 ## Decisões técnicas
 
 - **ProseMirror** com schema mínimo: `doc > paragraph+`, marcas `strong` e `em`. Formatação só por markdown (`**x**`, `*x*`, `_x_`) e `Mod-B/I`. Não adicionar toolbar.
 - **Um `EditorView` por cartão**, JS puro, sem framework. Arrasto com Pointer Events, sem biblioteca.
+- **Mesa e câmera (Fase 7a):** os cartões e as molduras de grupo ficam em `#world`, dentro de `#board`. `x`/`y` de cada cartão são posições **do mundo** e nunca mudam por causa da câmera.
+  - Câmera `cam = { x, y, z }` (`tela = mundo * z + (x, y)`), aplicada como `transform` do `#world`. É preferência de tela: fica em `localStorage` `cartoes.ui.cam` (demo: `cartoes.demo.cam`), **fora** do projeto salvo. Mover ou aproximar a mesa não grava o projeto.
+  - `toWorld(sx, sy)`, `viewRect()`, `zoomAt(sx, sy, z)`, `fitAll()` (Ctrl+0), `reveal(lista)` (desloca o mínimo para mostrar os cartões).
+  - Arrastar o fundo ou o botão do meio move; roda rola; `Shift`+roda de lado; `Ctrl`+roda dá zoom no cursor (20% a 200%; perto de 100% vira 100%). Sobre um cartão com texto sobrando, a roda rola o texto dele.
+  - Ao abrir, se nenhum cartão aparece na janela, enquadra tudo (resolve o I1).
+  - Um grupo nunca fica metade na mesa e metade na gaveta: `cleanGroups()` separa a parte guardada (I2/I3).
 - **Dados:** `{ id, x, y, z, r, g, cat, stashed, sa, doc }` por cartão (`g` = grupo, `cat` = cena/nota/lugar, `stashed`/`sa` = gaveta, `doc` = JSON do ProseMirror).
 - **Organizador (Fase 5)**, evolução do antigo "embaralhar" (botão "organizar" ou `E`). Estado `org = { orders, cur }`; ordem `{ id, name|null, note, notes: {idDoCartão: texto}, items: [{ ids, aside }], createdAt, updatedAt }`.
-  - **Uma ordem nunca mexe na mesa.** A exceção é "dispor na mesa": arruma em fileiras na ordem, com o que está de lado ou fora da ordem nas últimas fileiras, e pode ser desfeito pelo aviso.
+  - **Uma ordem nunca mexe na mesa.** A exceção é "dispor na mesa": arruma em fileiras na ordem a partir do canto do mundo (a janela vai para lá, a 100%), com o que está de lado ou fora da ordem nas últimas fileiras, e pode ser desfeito pelo aviso (a câmera também volta).
   - Peça = um cartão ou um grupo. "Separar o grupo nesta ordem" vale só na ordem. "Pôr de lado" (`↑`/`↓`) mantém a peça na fileira, erguida e esmaecida, fora da leitura.
   - Há no máximo uma ordem sem nome ("em teste"). "Salvar" dá nome; numa ordem já nomeada vira "salvar como nova". Embaralhar uma ordem nomeada cria uma ordem em teste e deixa a nomeada intacta.
   - Cartões fora da ordem esperam na bandeja "fora da ordem": clique põe no fim, arrastar põe no lugar. Arrastar da fileira para a bandeja tira o cartão da ordem.
@@ -59,48 +80,24 @@ Abrir `index.html#demo` carrega cartões de exemplo (inclui um com estouro de te
   - Lixeira: até 50 excluídos, persistente; tecla `T` reabre o último. Instantâneos: 20 recentes + 1 por dia (7 dias), a cada 5 min de atividade.
   - **App desktop (Electron):** `electron/main.cjs` (processo principal, dono do disco) + `electron/preload.cjs` (ponte `window.cartoesDisk`; a página não vê Node). Projeto em `<userData>/cartoes/projeto.json` (`CARTOES_DATA_DIR` sobrescreve, usado nos testes), gravação atômica (tmp + fsync + rename, com retentativa em EPERM/EBUSY), `projeto.json.bak` (renovado a cada ≥30 s) e `snapshots/<ms>.json` (20 + 1 por dia, 7 dias). Arquivo ilegível nunca é sobrescrito: vai para `projeto.corrompido-<hora>.json` e carrega-se `.bak` ou o último instantâneo. Ao abrir vale o registro mais novo entre disco, IndexedDB e localStorage (empate: disco), então quem já tinha dados no navegador é migrado sem apagar a origem. No fechamento a gravação é síncrona (`saveSync`). Instância única. `Ctrl+N` fica livre.
   - Rodar: `npm start` (rebuilda e abre o Electron).
-  - `Ctrl+S` (na mesa) exporta `.json` com cartões, lixeira e ordens; `Ctrl+O` importa (só acrescenta; ordens nomeadas entram como "(importada)", com os ids novos). Console: `cartoes.snapshots()`, `cartoes.restore(t)`, `cartoes.trash()`, `cartoes.ordens()`.
-- Atalhos: `E` abre o organizador; duplo clique no fundo ou `N` cria cartão; `Ctrl/⌘+Enter` cria o próximo ao lado; `Esc` tira o foco; `Backspace` em cartão vazio o apaga. (`Ctrl+N` é reservado pelo navegador; resolver no app desktop.)
+  - `Ctrl+S` (na mesa) exporta `.json` com cartões, lixeira e ordens; `Ctrl+O` importa (só acrescenta; ordens nomeadas entram como "(importada)", com os ids novos). Console: `cartoes.snapshots()`, `cartoes.restore(t)`, `cartoes.trash()`, `cartoes.ordens()`, `cartoes.exportText()`.
+- **Pontinho de salvo (Fase 6):** `#saved`, no canto superior direito. Classe `saved` (cinza), `saving` (pisca enquanto há edição por gravar), `failed` (vermelho) ou `ro` (vazado, aba somente leitura). O texto do hover fica em `data-tip` ("salvo às 14:32 · em disco" / "neste navegador" / "só nesta demonstração").
+- **Menu ≡ (Fase 6):** `#menu-btn` ao lado de "organizar". Itens: Exportar… (`Ctrl+E`), Importar backup… (`Ctrl+O`), Fazer backup (.json) (`Ctrl+S`), Lixeira, Instantâneos, Atalhos (`F1`). As janelas usam a mesma "folha" (`#sheet`, `openSheet`/`closeSheet`); com ela aberta as teclas não chegam à mesa e `Esc` fecha.
+  - Instantâneos: `listSnapshots()` junta os do IndexedDB e, no app desktop, os de `snapshots/` (`disk.snapshots`/`disk.snapshotGet`). `restoreSnapshot(t)` guarda o estado de agora como instantâneo, grava o antigo com hora mais nova em todos os destinos (inclusive o disco) e recarrega.
+- **Exportar (Fase 6):** janela com ordem (cada ordem ou a leitura da mesa), modelo (`corrido` / `secao` / `ficha`) e formato (`pdf` / `txt` / `md`), mais a prévia. Peças de lado não saem. Negrito e itálico saem como `**x**` e `*x*` em TXT e MD.
+  - App desktop: `disk.exportFile` / `disk.exportPdf` abrem o diálogo de salvar do sistema e gravam no processo principal; o PDF é paginado por `printToPDF` numa janela escondida e sem scripts. `disk.exportReveal` mostra na pasta o último arquivo exportado (a página não escolhe caminho).
+  - Navegador: download (sem acento no nome) ou a impressão do navegador, no PDF.
+  - Console: `cartoes.exportText(idDaOrdem | 'mesa', modelo, formato)` devolve o texto sem gravar nada.
+  - DOCX/ODT ficam para depois da validação.
+- Atalhos: `E` abre o organizador; duplo clique no fundo ou `N` cria cartão (o `N`, no centro do que a janela mostra); `Ctrl+0` mostra todos os cartões, `Ctrl+1` volta a 100%, `Ctrl +`/`Ctrl -` zoom; `Ctrl/⌘+Enter` cria o próximo ao lado; `Esc` tira o foco; `Backspace` em cartão sem nenhum caractere o apaga (um cartão só com espaços perde os espaços um a um, e `Ctrl+Z` os devolve); `Backspace` logo depois de uma conversão markdown a desfaz.
 - Interface em português (pt-BR).
 
 ## Próximos passos
 
-O plano vigente é `docs/PLANO_FASES_5_A_8.md` (decidido com o dono em 2026-11-03): 5 organizador, 6 menu + indicador de salvo + exportação docx/odt/pdf, 7 mesa (pan/zoom/modo mapa, tamanhos P/M/G, seleção múltipla), 8 revisão de interface. Cada fase só começa com "Sim, Fase N".
+O que falta fazer e as pendências ficam **só nos planos** (não repetir aqui):
 
-### Onde estamos
-
-- **Fase 5 feita** (organizador; 27 testes passando). Instalador `dist/Cartoes-Setup-1.0.0.exe` gerado, mas ainda não instalado nem aberto.
-- **Próxima: Fase 6.** Só começa quando o dono disser **"Sim, Fase 6"**.
-
-### Antes da Fase 6, perguntar ao dono
-
-1. **Moldura visível no foco:** a Fase 8 deixa a moldura levemente visível no cartão com foco. Isso toca o item 3 do "Conceito do cartão". Pode?
-2. **DOCX/ODT sem biblioteca:** gerar à mão (ZIP sem compressão + XML, recomendado, sem dependência) ou aceitar uma biblioteca (`docx`/`jszip`)?
-3. **Pontinho de salvo:** não entrou na Fase 5. Confirmar que vai na Fase 6.
-4. **Escuta sobre o organizador:** depois de instalar e usar alguns dias, o que funcionou e o que incomodou (inclui a linha de atalhos no rodapé, `.org-keys`).
-
-### Pendências antigas ainda abertas
-
-- **I1** cartões fora da tela se a janela diminuir (posições são da janela). Fica resolvido na Fase 7 (posições "do mundo").
-- **I2/I3** grupo parcialmente guardado: `cleanGroups` conta guardados e `renderGroups` só os da mesa; restaurar um cartão de grupo o devolve longe do grupo. Previsto de carona na Fase 7.
-- **I7** sem `undoInputRule` no Backspace.
-- **I8** Backspace apaga cartão só com espaços, sem desfazer.
-- Teste de falha real de `rename` no Windows (antivírus segurando o arquivo).
-- Ícone próprio e assinatura do instalador.
-- Passar a versão para 1.1.0 no próximo instalador (hoje 1.0.0).
-- **Busca** de cartões: estava na lista antiga ("Organização") e não entrou no plano.
-- **Editor de texto corrido** a partir de uma sequência de cartões: a exportação "texto corrido" da Fase 6 cobre o documento final; um editor dentro do app não está no plano.
-
-### Saíram da lista antiga (já feitos ou cobertos pelo plano)
-
-- App desktop, arquivo em disco, `Ctrl+N` livre, salvamento robusto, testes, instalador: feitos.
-- I6 (embaralhar repetindo com 2 peças): feito na Fase 5.
-- Agrupar/ordenar cartões e marcador de cor: feitos (grupos por ímã, categorias, organizador da Fase 5).
-- Restaurar instantâneo sem console: Fase 6 (item "Instantâneos" do menu ≡).
-- Exportar/importar projeto: backup `.json` já existe; documentos legíveis vão na Fase 6.
-- Pan/zoom do quadro e posições relativas ao quadro: Fase 7.
-- Usar o app instalado alguns dias: virou a escuta sobre o organizador, acima.
-- Testar o instalador instalado de fato: depende do dono instalar o `Cartoes-Setup-1.0.0.exe` (ver "Não verificado" no handoff).
+- `docs/PLANO_AJUSTES_ABORDAGEM.md`: ordem das fases (6, 7a, 7b, 8), validação depois da Fase 8, "Pendências ainda abertas" e "Depois da validação".
+- `docs/PLANO_FASES_5_A_8.md`: o que cada fase contém e o estado de cada uma.
 
 ## Empacotar (Windows)
 
@@ -110,6 +107,8 @@ npm run dist:dir   # só o app descompactado: dist/win-unpacked/Cartões.exe
 ```
 
 - electron-builder, configuração no campo `build` do `package.json`. O pacote leva só `index.html`, `electron/` e `package.json`; ProseMirror e esbuild são devDependencies porque já vão embutidos no `index.html`.
+- Gerar o instalador no Linux exige `wine` e `wine32` (o NSIS roda o desinstalador por ele). Foi assim que os instaladores 1.1.0 em diante foram gerados.
+- `"publish": null` no `build`: sem isso o electron-builder tenta adivinhar um destino de publicação pelo repositório git e falha no fim.
 - Sem ícone próprio (usa o do Electron) e sem assinatura de código: o Windows SmartScreen vai avisar na primeira execução. `signAndEditExecutable: false` evita a exigência de privilégio de symlink no build; para assinar/colocar ícone, remova essa opção e configure `win.icon` e um certificado.
 - Desinstalar não apaga os dados (`deleteAppDataOnUninstall: false`); o projeto fica em `<userData>\cartoes\projeto.json` (pasta do app em `%APPDATA%`; não conferi o nome exato dela no app instalado).
 - `dist/` é gerado; não editar nem versionar.
@@ -117,22 +116,35 @@ npm run dist:dir   # só o app descompactado: dist/win-unpacked/Cartões.exe
 ## Testes
 
 ```bash
-npm test              # rebuilda e roda tudo (node:test + Playwright, 27 testes, ~1 min)
+npm test              # rebuilda e roda tudo (node:test + Playwright, 55 testes, ~1,5 min)
 npm run test:browser  # persistência no navegador (contextos limpos)
 npm run test:electron # app desktop; isolado por CARTOES_DATA_DIR (arquivo e perfil do Chromium)
 ```
 
-- `tests/browser.test.cjs`: salvar, demo isolado, JSON ilegível, quarentena, aviso de falha, IndexedDB x espelho, aba única, teto de espera, lixeira, exportar/importar, instantâneos.
-- `tests/electron.test.cjs`: ponte sem Node, gravação ao fechar, disco como fonte, `.bak`/instantâneos/recuperação, instância única, ordens no `projeto.json`.
+- `tests/browser.test.cjs`: salvar, demo isolado, JSON ilegível, quarentena, aviso de falha, IndexedDB x espelho, aba única, teto de espera, lixeira, backup/importar, instantâneos, I7, I8, pontinho de salvo.
+- `tests/electron.test.cjs`: ponte sem Node, gravação ao fechar, disco como fonte, `.bak`/instantâneos/recuperação, instância única, ordens no `projeto.json`, pontinho "em disco", restaurar instantâneo do disco, Ctrl+0/Ctrl+1 da mesa, exportar TXT/MD/PDF pelo diálogo (o diálogo é trocado por uma resposta fixa com `app.evaluate`).
 - `tests/organizer.test.cjs`: ordem de leitura da mesa, mover (teclado e arrasto), pôr de lado, notas, salvar com nome, bandeja, separar grupo, embaralhar (I6), dispor na mesa + desfazer, Ctrl+Z, lixeira devolve ao lugar, exportar/importar ordens, demo isolado.
+- `tests/menu.test.cjs`: menu ≡, lixeira, instantâneos, atalhos (F1), demo isolado.
+- `tests/mesa.test.cjs`: arrasto, ímã, grupos, criação de cartões; câmera (deslocar, zoom no cursor, Ctrl+0/Ctrl+1, posições do mundo com zoom), janela menor (I1), roda sobre cartão com texto, grupo e gaveta (I2/I3).
+- `tests/export.test.cjs`: conteúdo de cada modelo e formato, escapes, janela Exportar e download.
 - Depois de `goto`, espere `.ProseMirror-focused` antes de digitar: a inicialização é assíncrona e teclas antes disso caem nos atalhos globais.
+- `seed()` (em `tests/helpers.cjs`) marca a primeira carga em `window.name`. Um `addInitScript` que toca no `localStorage` num recarregamento rápido enxerga o armazenamento vazio e faz a página perder o que acabou de gravar (só no Playwright; sem script de preparação o app não perde nada). Não leia nem grave `localStorage` em `addInitScript` depois da primeira carga.
 - Nunca rode testes sem `CARTOES_DATA_DIR` no Electron: sem isso eles gravam no perfil real do usuário.
+- Num contêiner Linux como root: `ELECTRON_DISABLE_SANDBOX=1 xvfb-run -a npm test` (sem isso o teste da segunda instância falha, porque o Electron não abre como root). Se o Playwright do `package.json` não casar com o Chromium já instalado, `npm i --no-save playwright@<versão instalada>` resolve sem mexer no `package.json`.
 
 ## Regras para trabalhar aqui
 
-- Fazer um bloco por vez; commit ao fim de cada um.
-- Git: até 2026-11-03 o projeto não era repositório git (o handoff registra isso). Desde o commit "Commit inicial do projeto Cartoes" ele é versionado em `lvitalismoser-creator/NABOKOV`, com a raiz do repositório uma pasta acima desta. A regra do commit vale. Se a cópia local em `D:\` não tiver a pasta `.git`, ela não vale ali até alguém rodar `git init` (ou clonar o repositório).
+- **Abrir uma fase:** só com "Sim, Fase N" do dono.
+- **Bloco:** uma unidade de trabalho que faz sentido sozinha e deixa os testes passando. Fazer um bloco por vez; `npm test` passando e um commit ao fim de cada um.
+- **Fechar uma fase:** os três são obrigatórios.
+  1. `npm test` passa.
+  2. Instalador novo gerado (`npm run dist`), com a versão aumentada.
+  3. O dono instala e confere por alguns minutos que nada quebrou. Só então a fase vira ✅ no plano; até lá fica "feita, aguardando conferência".
+- **Diário de uso:** no início de cada sessão, perguntar ao dono se houve uso desde a última vez e registrar em `docs/USO.md`.
+- **Pendências num lugar só:** nos planos. Este arquivo só aponta para eles; os `HANDOFF_*` são histórico.
+- Git: o projeto é versionado em `lvitalismoser-creator/NABOKOV`, com a raiz do repositório uma pasta acima desta. Se a cópia local em `D:\` não tiver a pasta `.git`, a regra do commit não vale ali até alguém clonar o repositório (ou rodar `git init`).
 - Sem dependências novas além das já listadas sem perguntar.
-- Antes de mexer no visual do cartão, reler "Conceito do cartão". Se uma mudança adicionar elemento visível por padrão, provavelmente está errada.
+- Antes de mexer no visual do cartão, reler "Conceito do cartão". Se uma mudança adicionar elemento visível por padrão e não for uma das três exceções registradas, está errada.
 - Validar visualmente: Playwright já está disponível (`require('playwright')`); tirar screenshot do quadro com `#demo` e conferir pilha, fade e pauta (a pauta fica serrilhada em gradientes com cantos duros em cartões rotacionados; manter bordas suaves).
 - Não editar `index.html` diretamente; sempre rebuildar.
+- Não tocar nos dados reais do dono: Electron só com `CARTOES_DATA_DIR`.

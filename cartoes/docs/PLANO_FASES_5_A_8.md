@@ -2,6 +2,8 @@
 
 Alinhado com o dono em 2026-11-03, depois de usar o app por ~2 minutos. Ordem escolhida por ele: **organizador primeiro**. Cada fase só começa com "Sim, Fase N".
 
+> **Leia junto:** `PLANO_AJUSTES_ABORDAGEM.md` (2026-11-11) ajusta a ordem das fases (6, 7a, 7b, 8), o que entra em cada uma, como uma fase é fechada e a validação. Onde os dois divergirem, vale aquele.
+
 ## Diagnóstico de partida
 
 - **Exportar "não existe" na prática.** Só há `Ctrl+S`, sem botão nem menu, e ele gera um `.json` de backup, não um documento legível.
@@ -74,9 +76,27 @@ A tela de embaralhar vira o organizador.
 - **De carona:** corrigir o I6 (embaralhar repetindo a ordem com 2 peças).
 - **Testes:** reordenar, pôr de lado, salvar, reabrir após fechar, cartão novo indo para a bandeja, grupo aberto, persistência no Electron.
 
-## Fase 6 — Menu, salvo e exportação
+## Fase 6 — Menu, salvo e exportação — feita em 2026-11-12, aguardando conferência do dono
 
-- **Pontinho de salvo** (pode ir já na Fase 5, ver pendências).
+Instalador: `Cartoes-Setup-1.1.0.exe`. Vira ✅ quando o dono instalar e conferir.
+
+**Como ficou** (blocos 6.1 a 6.4 do `PLANO_AJUSTES_ABORDAGEM.md`):
+
+- **I7 e I8.** Backspace logo depois de `**x**`/`*x*` desfaz a conversão. Backspace só apaga o cartão que não tem nenhum caractere; espaços se apagam um a um.
+- **Pontinho de salvo** no canto superior direito: cinza = salvo, pisca enquanto há algo por gravar, vermelho se falhar. O hover mostra "salvo às 14:32 · em disco".
+- **Menu ≡:** Exportar…, Importar backup…, Fazer backup (.json), Lixeira, Instantâneos, Atalhos (F1).
+  - Lixeira: lista os excluídos e devolve um por um. Não há "esvaziar".
+  - Instantâneos: lista, pede confirmação e restaura; o estado de agora vira instantâneo antes.
+- **Exportar** (`Ctrl+E`): ordem, modelo, formato (PDF, TXT, MD) e prévia. DOCX/ODT ficaram para depois da validação.
+- **De carona:** restaurar instantâneo não funcionava no app desktop (o recarregamento era bloqueado e o arquivo em disco, mais novo, vencia). Corrigido.
+- **Testes:** 16 novos. Total: 43, todos passando.
+
+As escolhas feitas sem o dono estão em `HANDOFF_2026-11-12.md`, em "Decisões tomadas sozinho".
+
+Plano original:
+
+
+- **Pontinho de salvo.**
 - **Menu ≡** discreto: Exportar…, Importar backup…, Fazer backup (.json), Lixeira, Instantâneos (resolve "restaurar sem console"), Atalhos. Cada item mostra o atalho.
 - **Janela "Exportar":** escolher a ordem (salva, ou a leitura da mesa enquanto não houver nenhuma), o modelo (texto corrido / por seção / ficha completa) e o formato. Uma pré-visualização curta. Salvar pelo diálogo do Windows.
 - **Formatos:**
@@ -86,7 +106,28 @@ A tela de embaralhar vira o organizador.
   - Negrito e itálico preservados em todos.
 - **Testes:** abrir cada arquivo gerado e conferir o texto (o `.docx`/`.odt` descompactados; o PDF por tamanho e presença do texto).
 
-## Fase 7 — Mesa
+## Fase 7 — Mesa (dividida em 7a e 7b pelo `PLANO_AJUSTES_ABORDAGEM.md`)
+
+### Fase 7a — Câmera da mesa — feita em 2026-11-12, aguardando conferência do dono
+
+Instalador: `Cartoes-Setup-1.2.0.exe`. Vira ✅ quando o dono instalar e conferir.
+
+**Como ficou:**
+
+- **Mesa infinita.** As posições são "do mundo"; a janela mostra um pedaço. Os dados antigos abrem iguais (câmera em 0,0 a 100%).
+- **Navegar:** arrastar o fundo (ou o botão do meio) move a mesa; a roda rola; `Shift`+roda vai de lado; `Ctrl`+roda dá zoom no cursor (20% a 200%); `Ctrl+0` mostra todos os cartões; `Ctrl+1` volta a 100%; `Ctrl +` e `Ctrl -` aproximam e afastam.
+- **Indicador de zoom** no canto superior esquerdo, só quando o zoom não é 100%. Clicar volta a 100%.
+- **A câmera não entra no projeto.** É preferência de tela; mover a mesa não grava nada nos cartões.
+- `N` cria no centro do que a janela mostra; duplo clique cria sob o cursor; `Ctrl+Enter`, devolver da gaveta e devolver da lixeira trazem a mesa até o cartão.
+- **I1 resolvido:** em janela menor nada some; se nenhum cartão aparece ao abrir, a mesa enquadra todos.
+- **I2/I3 resolvidos:** um grupo nunca fica metade na mesa e metade na gaveta.
+- **"Dispor na mesa"** não sobrepõe mais as fileiras: o que não cabe na janela fica mais abaixo.
+- **Testes:** 5 escritos antes de mexer no arrasto e no ímã, mais 7 da câmera. Total: 55, todos passando.
+
+### Fase 7b — Tamanhos, seleção e modo mapa
+
+Plano original (7a + 7b):
+
 
 - **Mesa infinita** com câmera (deslocamento + zoom). As posições passam a ser "do mundo", não da janela, o que resolve o I1 de vez. Os dados atuais migram sem mudança visível.
 - Arrastar o fundo move a mesa; roda rola; `Ctrl+roda` dá zoom no cursor; `Ctrl+0` = ver tudo; `Ctrl+1` = 100%. Duplo clique no fundo continua criando cartão.
@@ -107,9 +148,9 @@ A tela de embaralhar vira o organizador.
 
 ## Pendências para confirmar
 
-1. **Clicável × "zero poluição":** a Fase 8 deixa a moldura levemente visível no cartão **com foco**. Isso toca o item 3 do "Conceito do cartão". Pode?
-2. **DOCX/ODT sem biblioteca:** gerar à mão (recomendado, sem dependência) ou aceitar uma biblioteca (`docx`/`jszip`)?
-3. **Pontinho de salvo** junto com a Fase 5 (é pequeno e dá confiança desde já)?
+1. ~~**Clicável × "zero poluição":** moldura levemente visível no cartão com foco.~~ **Fechada em 2026-11-11:** aceita como exceção registrada no "Conceito do cartão" (`CLAUDE.md`). Entra na Fase 8.
+2. **DOCX/ODT sem biblioteca:** gerar à mão (recomendado, sem dependência) ou aceitar uma biblioteca (`docx`/`jszip`)? **Adiada:** DOCX/ODT só depois da validação (ver `PLANO_AJUSTES_ABORDAGEM.md`).
+3. ~~**Pontinho de salvo** junto com a Fase 5?~~ **Fechada em 2026-11-11:** vai na Fase 6 (Bloco 6.2).
 
 ## Não verificado / riscos
 

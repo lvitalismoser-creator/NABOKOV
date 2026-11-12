@@ -4,7 +4,8 @@ import { Schema } from 'prosemirror-model'
 import { keymap } from 'prosemirror-keymap'
 import { history, undo, redo } from 'prosemirror-history'
 import { baseKeymap, toggleMark } from 'prosemirror-commands'
-import { inputRules, InputRule } from 'prosemirror-inputrules'
+import { inputRules, InputRule, undoInputRule } from 'prosemirror-inputrules'
+import { toTxt, toMd, toHtml, toHtmlBody, blocksOf, fileName } from './export.js'
 
 /* ------------------------------------------------------------------ *
  *  Schema mínimo: parágrafos, negrito e itálico. Nada além disso.
@@ -37,6 +38,11 @@ const rules = inputRules({
  *  Estado do quadro
  * ------------------------------------------------------------------ */
 const W = 340, H = 214
+// tamanhos P/M/G, sempre na proporção de ficha; a altura dá linhas inteiras de pauta (4, 6 e 9)
+const SIZES = { p: [252, 158], m: [W, H], g: [474, 298] }
+const SIZE_LABEL = { p: 'P', m: 'M', g: 'G' }
+const wOf = (c) => SIZES[c.s || 'm'][0]
+const hOf = (c) => SIZES[c.s || 'm'][1]
 const GAP = 18   // distância entre cartões grudados num grupo
 const SNAP = 28  // alcance do ímã
 const CATS = ['cena', 'nota', 'lugar']
@@ -50,6 +56,7 @@ const BAK = 'cartoes.bak'              // cópia do último estado legível ao a
 const QUAR = 'cartoes.quarentena'       // cartões que não puderam ser carregados
 const CORRUPT = 'cartoes.corrompido'    // texto bruto ilegível (nunca sobrescrito)
 const board = document.getElementById('board')
+const world = document.getElementById('world') // a mesa infinita; a câmera é o transform dele
 const toast = document.getElementById('toast')
 const dock = document.getElementById('dock')
 const cards = new Map()
@@ -57,6 +64,8 @@ let zTop = 1
 let current = null // cartão com foco
 
 const isEmpty = (state) => state.doc.textContent.trim() === ''
+// sem nenhum caractere (nem espaço) e com um parágrafo só
+const isBlank = (state) => state.doc.childCount === 1 && state.doc.textContent === ''
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36))
 const rand = (a, b) => a + Math.random() * (b - a)
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
@@ -66,6 +75,123 @@ const TRAY = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"
 function emptyDoc() {
   return { type: 'doc', content: [{ type: 'paragraph' }] }
 }
+
+/* ------------------------------------------------------------------ *
+ *  Câmera: a mesa é infinita; a janela mostra um pedaço dela.
+ *  As posições dos cartões são "do mundo" e nunca mudam por causa da
+ *  câmera, que é só preferência de tela (fica fora do projeto salvo).
+ *  tela = mundo * z + (x, y)
+ * ------------------------------------------------------------------ */
+const CAM_KEY = DEMO_MODE ? 'cartoes.demo.cam' : 'cartoes.ui.cam'
+const ZMIN = 0.2, ZMAX = 2
+const cam = { x: 0, y: 0, z: 1 }
+const zoomBtn = document.getElementById('zoom')
+let camTimer, glideTimer
+
+function applyCam({ glide = false } = {}) {
+  cam.z = clamp(cam.z, ZMIN, ZMAX)
+  if (Math.abs(cam.z - 1) < 0.02) cam.z = 1 // perto de 100% vira 100%: texto nítido
+  cam.x = Math.round(cam.x); cam.y = Math.round(cam.y)
+  clearTimeout(glideTimer)
+  world.classList.toggle('gliding', glide)
+  if (glide) glideTimer = setTimeout(() => world.classList.remove('gliding'), 360)
+  world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.z})`
+  zoomBtn.hidden = cam.z === 1
+  zoomBtn.textContent = Math.round(cam.z * 100) + '%'
+  clearTimeout(camTimer)
+  camTimer = setTimeout(() => lsSet(CAM_KEY, JSON.stringify(cam)), 250)
+}
+function loadCam() {
+  try {
+    const c = JSON.parse(lsGet(CAM_KEY))
+    if (c && [c.x, c.y, c.z].every(Number.isFinite)) Object.assign(cam, { x: c.x, y: c.y, z: c.z })
+  } catch {}
+  applyCam()
+}
+const toWorld = (sx, sy) => [(sx - cam.x) / cam.z, (sy - cam.y) / cam.z]
+/* Pedaço do mundo que a janela mostra. */
+const viewRect = () => ({ x0: -cam.x / cam.z, y0: -cam.y / cam.z, x1: (innerWidth - cam.x) / cam.z, y1: (innerHeight - cam.y) / cam.z })
+
+/* Zoom mantendo fixo o ponto da tela (sx, sy): o que está sob o cursor fica sob o cursor. */
+function zoomAt(sx, sy, z, opts) {
+  z = clamp(z, ZMIN, ZMAX)
+  const [wx, wy] = toWorld(sx, sy)
+  cam.z = z; cam.x = sx - wx * z; cam.y = sy - wy * z
+  applyCam(opts)
+}
+const zoomBy = (f) => zoomAt(innerWidth / 2, innerHeight / 2, cam.z * f, { glide: true })
+
+/* Ver tudo (Ctrl+0): enquadra todos os cartões da mesa, sem passar de 100%. */
+function fitAll(opts = { glide: true }) {
+  const list = live()
+  if (!list.length) { Object.assign(cam, { x: 0, y: 0, z: 1 }); applyCam(opts); return }
+  const r = rectOf(list), PAD = 48, TOP = 64
+  const z = clamp(Math.min(1, (innerWidth - PAD * 2) / (r.x1 - r.x0), (innerHeight - TOP - PAD) / (r.y1 - r.y0)), ZMIN, ZMAX)
+  cam.z = z
+  cam.x = (innerWidth - (r.x0 + r.x1) * z) / 2
+  cam.y = TOP + (innerHeight - TOP - PAD - (r.y1 - r.y0) * z) / 2 - r.y0 * z
+  applyCam(opts)
+}
+
+/* Desloca a mesa o mínimo necessário para estes cartões aparecerem inteiros. */
+function reveal(list, opts = { glide: true }) {
+  if (!list.length) return
+  const r = rectOf(list), v = viewRect(), M = 28 / cam.z, T = 60 / cam.z
+  let dx = 0, dy = 0
+  if (r.x1 - r.x0 > v.x1 - v.x0 - 2 * M || r.x0 < v.x0 + M) dx = v.x0 + M - r.x0
+  else if (r.x1 > v.x1 - M) dx = v.x1 - M - r.x1
+  if (r.y1 - r.y0 > v.y1 - v.y0 - T - M || r.y0 < v.y0 + T) dy = v.y0 + T - r.y0
+  else if (r.y1 > v.y1 - M) dy = v.y1 - M - r.y1
+  if (!dx && !dy) return
+  cam.x += dx * cam.z; cam.y += dy * cam.z
+  applyCam(opts)
+}
+
+/* Arrastar o fundo (ou o botão do meio em qualquer lugar) move a mesa. */
+board.addEventListener('pointerdown', (e) => {
+  const bg = e.target === board || e.target === world
+  if (e.button === 0 && bg && e.shiftKey) { startBox(e); return }
+  if (!((e.button === 0 && bg) || e.button === 1)) return
+  if (e.button === 1) e.preventDefault()
+  const sx = e.clientX, sy = e.clientY, x0 = cam.x, y0 = cam.y
+  let moved = false
+  board.setPointerCapture(e.pointerId)
+  const move = (ev) => {
+    if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return
+    if (!moved) { moved = true; document.body.classList.add('panning') }
+    cam.x = x0 + ev.clientX - sx; cam.y = y0 + ev.clientY - sy
+    applyCam()
+  }
+  const up = () => {
+    board.removeEventListener('pointermove', move)
+    board.removeEventListener('pointerup', up)
+    board.removeEventListener('pointercancel', up)
+    document.body.classList.remove('panning')
+    if (!moved && e.button === 0) clearSel() // clique no fundo solta a seleção
+  }
+  board.addEventListener('pointermove', move)
+  board.addEventListener('pointerup', up)
+  board.addEventListener('pointercancel', up)
+})
+
+/* Roda: rola a mesa; Ctrl + roda (ou pinça) dá zoom no cursor.
+ * Sobre um cartão com mais texto do que cabe, a roda rola o texto dele. */
+board.addEventListener('wheel', (e) => {
+  const unit = e.deltaMode === 1 ? 28 : e.deltaMode === 2 ? innerHeight : 1
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault()
+    zoomAt(e.clientX, e.clientY, cam.z * Math.exp(-e.deltaY * unit * 0.0016))
+    return
+  }
+  const sc = e.target.closest?.('.scroll')
+  if (sc && sc.scrollHeight > sc.clientHeight + 1) return
+  e.preventDefault()
+  let dx = e.deltaX * unit, dy = e.deltaY * unit
+  if (e.shiftKey && !dx) { dx = dy; dy = 0 }
+  cam.x -= dx; cam.y -= dy
+  applyCam()
+}, { passive: false })
+zoomBtn.onclick = () => zoomAt(innerWidth / 2, innerHeight / 2, 1, { glide: true })
 
 /* ------------------------------------------------------------------ *
  *  Persistência
@@ -79,8 +205,24 @@ let db = null
 let saveTimer, firstDirty = 0
 const DEBOUNCE = 400, MAX_WAIT = 3000
 
+/* Pontinho de salvo: cinza = salvo, pisca enquanto há algo por gravar, vermelho se falhou. */
+const savedDot = document.getElementById('saved')
+const WHERE = DEMO_MODE ? 'só nesta demonstração' : disk ? 'em disco' : 'neste navegador'
+const hhmm = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+let savedAt = 0
+function paintSaved(state) {
+  const tip = state === 'ro' ? 'somente leitura · aberto em outra aba'
+    : state === 'failed' ? 'não consegui salvar · não feche esta janela'
+    : state === 'saving' ? 'salvando…'
+    : savedAt ? `salvo às ${hhmm(savedAt)} · ${WHERE}` : `tudo salvo · ${WHERE}`
+  savedDot.className = state
+  savedDot.dataset.tip = tip
+  savedDot.setAttribute('aria-label', tip)
+}
+
 function save() {
   if (!ready || readOnly) return
+  if (!saveFailed) paintSaved('saving')
   const now = Date.now()
   if (!firstDirty) firstDirty = now
   clearTimeout(saveTimer)
@@ -90,7 +232,7 @@ function save() {
 function snapshotOf(c) {
   // o doc só é reserializado quando mudou (docJ é invalidado a cada edição)
   return {
-    id: c.id, x: c.x, y: c.y, z: c.z, r: c.r, g: c.g, cat: c.cat, stashed: c.stashed, sa: c.sa,
+    id: c.id, x: c.x, y: c.y, z: c.z, r: c.r, g: c.g, cat: c.cat, s: c.s, stashed: c.stashed, sa: c.sa,
     doc: (c.docJ ||= c.view.state.doc.toJSON()),
   }
 }
@@ -171,13 +313,17 @@ const ORG_KEY = DEMO_MODE ? 'cartoes.demo.org' : 'cartoes.org'
 let org = { orders: [], cur: null }
 
 let saveFailed = false
-function report(ok) {
+function report(ok, t) {
   if (ok) {
     if (saveFailed) { saveFailed = false; toast.classList.remove('show') }
+    savedAt = Math.max(savedAt, t)
+    // se já há outra edição esperando, o pontinho continua piscando até ela ser gravada
+    if (!firstDirty) paintSaved('saved')
     return
   }
   // nunca em silêncio: o usuário precisa saber que o texto não está sendo guardado
   saveFailed = true
+  paintSaved('failed')
   clearTimeout(toastTimer)
   toast.textContent = 'Não consegui salvar. Seus cartões continuam aqui, mas não feche esta janela.'
   toast.classList.add('show')
@@ -205,7 +351,7 @@ function flush(final = false) {
     // no app desktop o que importa é o arquivo; no navegador, qualquer um dos destinos
     const ok = disk ? diskOk : (lsOk || idbOk)
     if (!ok) console.error('cartoes: falha ao salvar')
-    report(ok)
+    report(ok, t)
   })
   return lsOk
 }
@@ -228,6 +374,7 @@ function sane(d) {
     x: num(d.x), y: num(d.y), z: num(d.z), r: num(d.r),
     g: typeof d.g === 'string' && d.g ? d.g : null,
     cat: CATS.includes(d.cat) ? d.cat : null,
+    s: d.s === 'p' || d.s === 'g' ? d.s : null, // null = M
     stashed: d.stashed === true,
     sa: num(d.sa) ?? 0,
     doc: d.doc || undefined,
@@ -260,6 +407,7 @@ async function load() {
   if (parsed) cands.push({ t: lsT, cards: parsed, trash: lsTrash, org: lsOrg })
   let best = null
   for (const c of cands) if (!best || c.t > best.t) best = c
+  savedAt = best?.t || 0
   const source = best?.cards, rawTrash = best?.trash
   const diskWarn = drec?.warn || null
   if (Array.isArray(rawTrash)) {
@@ -293,7 +441,7 @@ async function load() {
 function createCard(data = {}, { focus = false, animate = false } = {}) {
   const c = {
     id: data.id || uid(),
-    g: data.g || null, cat: data.cat || null, stashed: !!data.stashed, sa: data.sa || 0,
+    g: data.g || null, cat: data.cat || null, s: data.s || null, stashed: !!data.stashed, sa: data.sa || 0,
     x: data.x ?? 100, y: data.y ?? 100,
     z: data.z ?? ++zTop,
     r: data.r ?? +rand(-0.45, 0.45).toFixed(2),
@@ -309,8 +457,11 @@ function createCard(data = {}, { focus = false, animate = false } = {}) {
       <div class="paper">
         <span class="grip"></span>
         <span class="cats">${CATS.map((k) => `<button tabindex="-1" data-cat="${k}">${CAT_LABEL[k]}</button>`).join('')}</span>
-        <button class="stash" tabindex="-1" title="Guardar na gaveta (não exclui)">${TRAY}guardar</button>
-        <button class="close" tabindex="-1" aria-label="Excluir cartão" title="Excluir">×</button>
+        <span class="tools">
+          <span class="sizes" title="Tamanho do cartão (Alt+1, Alt+2, Alt+3)">${Object.keys(SIZES).map((k) => `<button tabindex="-1" data-s="${k}" aria-label="Tamanho ${SIZE_LABEL[k]}">${SIZE_LABEL[k]}</button>`).join('')}</span>
+          <button class="stash" tabindex="-1" title="Guardar na gaveta (não exclui)">${TRAY}<span>guardar</span></button>
+          <button class="close" tabindex="-1" aria-label="Excluir cartão" title="Excluir">×</button>
+        </span>
         <div class="scroll"><div class="mount"></div></div>
       </div>
     </div>`
@@ -319,6 +470,7 @@ function createCard(data = {}, { focus = false, animate = false } = {}) {
   el.style.setProperty('--r', c.r + 'deg')
   if (c.stashed) el.classList.add('stashed')
   paintCat(c)
+  paintSize(c)
   place(c)
 
   const state = EditorState.create({
@@ -331,9 +483,15 @@ function createCard(data = {}, { focus = false, animate = false } = {}) {
         'Mod-b': toggleMark(schema.marks.strong),
         'Mod-i': toggleMark(schema.marks.em),
         'Mod-Enter': () => { spawnNextTo(c); return true },
+        'Alt-1': () => { setSize([c], 'p'); return true },
+        'Alt-2': () => { setSize([c], 'm'); return true },
+        'Alt-3': () => { setSize([c], 'g'); return true },
         Escape: (_s, _d, view) => { view.dom.blur(); return true },
-        Backspace: (s) => {
-          if (isEmpty(s) && s.doc.childCount === 1) { removeCard(c, { undoable: false }); return true }
+        Backspace: (s, dispatch) => {
+          // logo depois de uma regra markdown, Backspace desfaz a conversão (I7)
+          if (undoInputRule(s, dispatch)) return true
+          // só um cartão sem nenhum caractere é apagado; espaços são texto e se apagam um a um (I8)
+          if (isBlank(s)) { removeCard(c, { undoable: false }); return true }
           return false
         },
       }),
@@ -355,7 +513,7 @@ function createCard(data = {}, { focus = false, animate = false } = {}) {
 
   wire(c)
   cards.set(c.id, c)
-  board.appendChild(el)
+  world.appendChild(el)
   measure(c)
   syncEmpty()
   renderGroups()
@@ -374,12 +532,50 @@ function paintCat(c) {
   c.el.querySelectorAll('.cats button').forEach((b) => b.classList.toggle('on', b.dataset.cat === c.cat))
 }
 
+function paintSize(c) {
+  c.el.dataset.s = c.s || 'm'
+  c.el.querySelectorAll('.sizes button').forEach((b) => b.classList.toggle('on', b.dataset.s === (c.s || 'm')))
+}
+
+/* Tamanho P/M/G: o canto de cima à esquerda fica onde está; o texto não muda, só quanto dele aparece. */
+function setSize(list, size) {
+  if (blocked()) return
+  const s = size === 'm' ? null : size
+  const changed = list.filter((c) => c.s !== s)
+  if (!changed.length) return
+  const before = changed.map((c) => [c, c.s])
+  changed.forEach((c) => { c.s = s; paintSize(c); measure(c) })
+  renderGroups(); save()
+  rememberMesa('tamanho', () => {
+    before.forEach(([c, old]) => { if (cards.has(c.id)) { c.s = old; paintSize(c); measure(c) } })
+    renderGroups(); save()
+  })
+}
+
+/* Desfazer da mesa (Ctrl+Z sem cursor num cartão): mover, tamanho e ações em lote. */
+const mesaPast = []
+// a mesma ação pode ser desfeita pelo aviso ou pelo Ctrl+Z: só vale uma vez
+const once = (fn) => { let done = false; const f = () => { if (!done) { done = true; fn() } }; f.spent = () => done; return f }
+function rememberMesa(what, fn) {
+  mesaPast.push({ what, fn })
+  if (mesaPast.length > 40) mesaPast.shift()
+}
+function undoMesa() {
+  if (blocked()) return
+  let u = mesaPast.pop()
+  while (u && u.fn.spent?.()) u = mesaPast.pop() // já desfeita pelo aviso
+  if (!u) { say('Nada para desfazer na mesa'); return }
+  u.fn()
+  say('Desfeito: ' + u.what)
+}
+
 /* O cartão tem mais texto do que mostra? Mostra isso como pilha de folhas. */
 function measure(c) {
   const s = c.scroll
   const content = c.view.dom.offsetHeight
   const ratio = content / s.clientHeight
-  const depth = ratio <= 1.001 ? 0 : ratio < 1.7 ? 1 : ratio < 3 ? 2 : 3
+  // 2 px de folga: um cartão cheio até a última linha ainda não tem "mais texto do que mostra"
+  const depth = content <= s.clientHeight + 2 ? 0 : ratio < 1.7 ? 1 : ratio < 3 ? 2 : 3
   c.el.dataset.depth = depth
   c.el.classList.toggle('more-below', s.scrollTop + s.clientHeight < s.scrollHeight - 2)
   c.el.classList.toggle('more-above', s.scrollTop > 2)
@@ -408,7 +604,7 @@ const unitOf = (c) => (c.g ? live().filter((k) => k.g === c.g) : [c])
 function rectOf(list) {
   return {
     x0: Math.min(...list.map((k) => k.x)), y0: Math.min(...list.map((k) => k.y)),
-    x1: Math.max(...list.map((k) => k.x)) + W, y1: Math.max(...list.map((k) => k.y)) + H,
+    x1: Math.max(...list.map((k) => k.x + wOf(k))), y1: Math.max(...list.map((k) => k.y + hOf(k))),
   }
 }
 
@@ -416,7 +612,17 @@ function rectOf(list) {
 const reading = (list) => [...list].sort((a, b) =>
   Math.abs(a.y - b.y) < H * 0.6 ? a.x - b.x : a.y - b.y)
 
+/* Mantém os grupos coerentes:
+ * - um grupo nunca fica metade na mesa e metade na gaveta (I2/I3): a parte
+ *   guardada vira um grupo próprio, que volta junta e no lugar onde saiu;
+ * - grupo de um cartão só deixa de ser grupo. */
 function cleanGroups() {
+  const by = new Map()
+  cards.forEach((k) => { if (k.g) { if (!by.has(k.g)) by.set(k.g, []); by.get(k.g).push(k) } })
+  for (const list of by.values()) {
+    const away = list.filter((k) => k.stashed)
+    if (away.length && away.length < list.length) { const gid = uid(); away.forEach((k) => { k.g = gid }) }
+  }
   const n = new Map()
   cards.forEach((k) => { if (k.g) n.set(k.g, (n.get(k.g) || 0) + 1) })
   cards.forEach((k) => { if (k.g && n.get(k.g) < 2) k.g = null })
@@ -448,7 +654,7 @@ function renderGroups() {
         const m = reading(live().filter((k) => k.g === gid))
         if (m.length) startDrag(m[0], e, e.currentTarget)
       })
-      board.appendChild(f)
+      world.appendChild(f)
       frames.set(gid, f)
     }
     const r = rectOf(list)
@@ -467,7 +673,7 @@ function magnet(list, r0, dx, dy) {
   const tryIt = (d, sx, sy, o) => { if (d < SNAP && (!best || d < best.d)) best = { d, sx, sy, o } }
   for (const o of live()) {
     if (list.includes(o)) continue
-    const B = { x0: o.x, y0: o.y, x1: o.x + W, y1: o.y + H }
+    const B = { x0: o.x, y0: o.y, x1: o.x + wOf(o), y1: o.y + hOf(o) }
     const vo = Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0)
     const ho = Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0)
     const alignY = Math.abs(A.y0 - B.y0) < SNAP ? B.y0 - A.y0 : 0
@@ -493,14 +699,12 @@ function blocked() {
 
 function startDrag(c, e, host) {
   if (blocked()) return
-  if (e.shiftKey && c.g) { c.g = null; cleanGroups(); renderGroups() }
-  bringUnitToFront(unitOf(c))
-  const list = unitOf(c)
-  const start = list.map((k) => [k, k.x, k.y])
-  const r0 = rectOf(list)
-  const minY = list.length > 1 ? 34 : -20
+  const mod = e.shiftKey || e.ctrlKey || e.metaKey
+  // um clique simples num cartão de fora desfaz a seleção
+  if (!mod && !sel.has(c)) clearSel()
+  bringUnitToFront(sel.has(c) && sel.size > 1 ? selUnits() : unitOf(c))
   const sx = e.clientX, sy = e.clientY
-  let moved = false, snap = null, lit = []
+  let moved = false, snap = null, lit = [], list = [], start = [], r0 = null, multi = false
   host.setPointerCapture(e.pointerId)
 
   const light = (o) => {
@@ -508,15 +712,28 @@ function startDrag(c, e, host) {
     lit = o ? unitOf(o) : []
     lit.forEach((k) => k.el.classList.add('magnet'))
   }
+  // o conjunto arrastado só é decidido quando o arrasto começa de fato (um clique não solta ninguém do grupo)
+  const begin = () => {
+    multi = sel.has(c) && sel.size > 1
+    const group = c.g ? unitOf(c).map((k) => [k, k.x, k.y, k.g]) : []
+    // Shift + arrastar solta o cartão do grupo
+    if (e.shiftKey && c.g && !multi) { c.g = null; cleanGroups(); renderGroups() }
+    list = multi ? selUnits() : unitOf(c)
+    start = list.map((k) => [k, k.x, k.y, k.g])
+    for (const row of group) if (!list.includes(row[0])) start.push(row) // para o desfazer devolver o grupo
+    r0 = rectOf(list)
+    list.forEach((k) => { k.dragging = true; k.el.classList.add('dragging') })
+  }
   const move = (ev) => {
-    let dx = ev.clientX - sx, dy = ev.clientY - sy
-    if (!moved && Math.hypot(dx, dy) < 4) return
-    if (!moved) { moved = true; list.forEach((k) => { k.dragging = true; k.el.classList.add('dragging') }) }
-    dx = clamp(dx, -W + 80 - r0.x0, innerWidth - 80 - r0.x0)
-    dy = clamp(dy, minY - r0.y0, innerHeight - 60 - r0.y0)
-    snap = magnet(list, r0, dx, dy)
+    if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return
+    if (!moved) { moved = true; begin() }
+    // a mesa é infinita: sem cercas; o deslocamento da tela vira deslocamento do mundo
+    let dx = (ev.clientX - sx) / cam.z, dy = (ev.clientY - sy) / cam.z
+    // vários cartões soltos andando juntos não grudam em ninguém
+    snap = multi ? null : magnet(list, r0, dx, dy)
     if (snap) { dx += snap.sx; dy += snap.sy }
     start.forEach(([k, x, y]) => {
+      if (!list.includes(k)) return
       k.x = x + dx; k.y = y + dy; place(k)
       k.el.classList.toggle('snapped', !!snap)
     })
@@ -533,16 +750,125 @@ function startDrag(c, e, host) {
     if (moved && snap) {
       const target = unitOf(snap.o)
       const gid = target.find((k) => k.g)?.g || list.find((k) => k.g)?.g || uid()
+      for (const k of target) if (!start.some((row) => row[0] === k)) start.push([k, k.x, k.y, k.g])
       ;[...list, ...target].forEach((k) => { k.g = gid })
       renderGroups()
       const f = frames.get(gid)
       if (f) { f.classList.remove('join'); void f.offsetWidth; f.classList.add('join') }
     }
-    if (moved) save(); else if (host === c.el) c.view.focus()
+    if (moved) {
+      save()
+      rememberMesa('mover', () => {
+        start.forEach(([k, x, y, g]) => { if (cards.has(k.id)) { k.x = x; k.y = y; k.g = g; place(k) } })
+        cleanGroups(); renderGroups(); save()
+      })
+    } else if (host === c.el) {
+      // clique sem arrastar: com Shift/Ctrl entra ou sai da seleção; sem, põe o cursor no cartão
+      if (mod) toggleSel(c)
+      else { clearSel(); c.view.focus() }
+    }
   }
   host.addEventListener('pointermove', move)
   host.addEventListener('pointerup', up)
   host.addEventListener('pointercancel', up)
+}
+
+/* ------------------------------------------------------------------ *
+ *  Seleção múltipla: Shift + arrastar no fundo desenha uma caixa;
+ *  Shift/Ctrl + clique põe ou tira um cartão. Arrastar um selecionado
+ *  move todos; a barra oferece guardar, excluir e tamanho em lote.
+ * ------------------------------------------------------------------ */
+const sel = new Set()
+const selBar = document.getElementById('selbar')
+const selBox = document.getElementById('selbox')
+
+function paintSel() {
+  for (const c of [...sel]) if (!cards.has(c.id) || c.stashed) sel.delete(c)
+  cards.forEach((c) => c.el.classList.toggle('selected', sel.has(c)))
+  selBar.hidden = sel.size === 0
+  document.body.classList.toggle('selecting', sel.size > 0)
+  if (sel.size) document.getElementById('sel-n').textContent = sel.size === 1 ? '1 cartão selecionado' : `${sel.size} cartões selecionados`
+}
+function setSel(list) { sel.clear(); list.forEach((c) => sel.add(c)); paintSel() }
+function clearSel() { if (sel.size) setSel([]) }
+function toggleSel(c) {
+  if (sel.has(c)) sel.delete(c); else sel.add(c)
+  document.activeElement?.blur?.()
+  paintSel()
+}
+/* Os selecionados mais os colegas de grupo de cada um: é o que anda junto. */
+function selUnits() {
+  const out = new Set()
+  for (const c of sel) for (const k of unitOf(c)) out.add(k)
+  return [...out]
+}
+// no texto, Ctrl + clique (ou Shift + clique num cartão que não é o do cursor) seleciona o cartão
+const selClick = (e, c) => e.ctrlKey || e.metaKey || (e.shiftKey && current !== c)
+
+function startBox(e) {
+  const sx = e.clientX, sy = e.clientY
+  const base = e.ctrlKey || e.metaKey ? [...sel] : []
+  let moved = false
+  board.setPointerCapture(e.pointerId)
+  document.activeElement?.blur?.()
+  const move = (ev) => {
+    if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return
+    moved = true
+    const x0 = Math.min(sx, ev.clientX), y0 = Math.min(sy, ev.clientY), x1 = Math.max(sx, ev.clientX), y1 = Math.max(sy, ev.clientY)
+    selBox.hidden = false
+    selBox.style.transform = `translate(${x0}px, ${y0}px)`
+    selBox.style.width = x1 - x0 + 'px'; selBox.style.height = y1 - y0 + 'px'
+    const [wx0, wy0] = toWorld(x0, y0), [wx1, wy1] = toWorld(x1, y1)
+    const hit = live().filter((k) => k.x < wx1 && k.x + wOf(k) > wx0 && k.y < wy1 && k.y + hOf(k) > wy0)
+    setSel([...new Set([...base, ...hit])])
+  }
+  const up = () => {
+    board.removeEventListener('pointermove', move)
+    board.removeEventListener('pointerup', up)
+    board.removeEventListener('pointercancel', up)
+    selBox.hidden = true
+  }
+  board.addEventListener('pointermove', move)
+  board.addEventListener('pointerup', up)
+  board.addEventListener('pointercancel', up)
+}
+
+selBar.addEventListener('click', (e) => {
+  const b = e.target.closest('button')
+  if (!b) return
+  if (b.dataset.s) setSize([...sel], b.dataset.s)
+  else if (b.id === 'sel-stash') stashSel()
+  else if (b.id === 'sel-del') deleteSel()
+  else if (b.id === 'sel-clear') clearSel()
+})
+
+/* ---------- ações em lote (todas com desfazer: no aviso e no Ctrl+Z da mesa) ---------- */
+const nOf = (n, one, many) => (n === 1 ? `1 ${one}` : `${n} ${many}`)
+
+function deleteSel() {
+  if (!sel.size || blocked()) return
+  const list = [...sel]
+  const ids = list.filter((c) => !isEmpty(c.view.state)).map((c) => c.id)
+  list.forEach((c) => removeCard(c, { undoable: !isEmpty(c.view.state), quiet: true }))
+  clearSel()
+  if (!ids.length) return
+  const undo = once(() => {
+    const back = ids.map((id) => reviveFromTrash(id, { focus: false })).filter(Boolean)
+    if (back.length) { setSel(back); reveal(back) }
+  })
+  rememberMesa('excluir', undo)
+  sayUndo(`${nOf(ids.length, 'cartão excluído · está', 'cartões excluídos · estão')} na lixeira`, undo)
+}
+
+function stashSel() {
+  if (!sel.size || blocked()) return
+  const list = [...sel].filter((c) => !isEmpty(c.view.state))
+  if (!list.length) { say('Escreva algo antes de guardar'); return }
+  clearSel()
+  stashUnit(list, { quiet: true })
+  const undo = once(() => { const back = list.filter((c) => cards.has(c.id) && c.stashed); if (back.length) { restoreUnit(back); setSel(back) } })
+  rememberMesa('guardar', undo)
+  sayUndo(`${nOf(list.length, 'cartão guardado · está', 'cartões guardados · estão')} na gaveta`, undo)
 }
 
 function wire(c) {
@@ -552,6 +878,7 @@ function wire(c) {
 
   // clicar no vazio do cartão leva o cursor ao fim
   scroll.addEventListener('mousedown', (e) => {
+    if (selClick(e, c)) return
     if (e.target === scroll || e.target.classList.contains('mount')) {
       e.preventDefault()
       c.view.focus()
@@ -560,12 +887,18 @@ function wire(c) {
   })
 
   // arrastar pela moldura (faixa de cima e margens), nunca pelo texto
-  const ctl = '.scroll, .close, .stash, .cats'
   el.addEventListener('mousedown', (e) => {
-    if (!e.target.closest(ctl)) e.preventDefault() // mantém o foco
-  })
+    // clique de seleção no texto: o editor nem fica sabendo (não move o cursor nem tira o foco de onde está)
+    if (e.target.closest('.scroll') && selClick(e, c)) { e.preventDefault(); e.stopPropagation(); return }
+    // só o texto recebe foco: a moldura e os botões do cartão não tiram o cursor de onde está
+    if (!e.target.closest('.scroll')) e.preventDefault()
+  }, true)
   el.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || e.target.closest(ctl)) return
+    if (e.button !== 0 || e.target.closest('.close, .stash, .cats, .sizes')) return
+    if (e.target.closest('.scroll')) {
+      if (selClick(e, c)) { if (!blocked()) toggleSel(c) } else clearSel()
+      return
+    }
     startDrag(c, e, el)
   })
 
@@ -575,6 +908,10 @@ function wire(c) {
     c.cat = c.cat === b.dataset.cat ? null : b.dataset.cat
     paintCat(c)
     save()
+  })
+  el.querySelector('.sizes').addEventListener('click', (e) => {
+    const b = e.target.closest('button')
+    if (b) setSize([c], b.dataset.s)
   })
   el.querySelector('.stash').addEventListener('click', () => stashUnit([c]))
 
@@ -596,7 +933,7 @@ function wire(c) {
   })
 }
 
-function removeCard(c, { undoable }) {
+function removeCard(c, { undoable, quiet = false }) {
   if (!cards.has(c.id) || blocked()) return
   const snapshot = snapshotOf(c)
   cards.delete(c.id)
@@ -611,18 +948,20 @@ function removeCard(c, { undoable }) {
     if (trash.length > TRASH_MAX) trash.splice(0, trash.length - TRASH_MAX)
   }
   save()
-  if (undoable) showUndo(snapshot)
+  paintSel()
+  if (undoable && !quiet) showUndo(snapshot)
 }
 
 /* Devolve da lixeira o cartão com este id (o mais recente, se omitido). */
-function reviveFromTrash(id) {
+function reviveFromTrash(id, { focus = true } = {}) {
   const i = id ? trash.findIndex((d) => d.id === id) : trash.length - 1
   if (i < 0) return null
   const [d] = trash.splice(i, 1)
   const data = { ...d }
   if (cards.has(data.id)) data.id = undefined
-  const c = createCard(data, { animate: true, focus: true })
+  const c = createCard(data, { animate: true, focus })
   cleanGroups(); renderGroups(); syncEmpty(); save()
+  if (focus) reveal([c])
   return c
 }
 
@@ -639,10 +978,11 @@ function showUndo(snapshot) {
 }
 
 /* Aviso com um botão "desfazer" (some sozinho em 6 s). */
-function sayUndo(msg, fn) {
+const sayUndo = (msg, fn) => sayAct(msg, 'desfazer', fn)
+function sayAct(msg, label, fn) {
   toast.textContent = msg
   const b = document.createElement('button')
-  b.textContent = 'desfazer'
+  b.textContent = label
   b.onclick = () => { toast.classList.remove('show'); fn() }
   toast.append(b)
   toast.classList.add('show')
@@ -672,7 +1012,7 @@ function firstWords(c, n) {
   return w.slice(0, n).join(' ') + (w.length > n ? '…' : '')
 }
 
-function stashUnit(list) {
+function stashUnit(list, { quiet = false } = {}) {
   if (blocked()) return
   if (list.some((k) => isEmpty(k.view.state))) { say('Escreva algo antes de guardar'); return }
   const t = Date.now()
@@ -683,7 +1023,7 @@ function stashUnit(list) {
     setTimeout(() => { k.el.classList.remove('stashing'); k.el.classList.add('stashed') }, 180)
   })
   if (list.includes(current)) { current = null; document.body.classList.remove('editing') }
-  syncEmpty(); renderGroups(); renderDock(); save()
+  cleanGroups(); syncEmpty(); renderGroups(); renderDock(); paintSel(); save()
 }
 
 function restoreUnit(list) {
@@ -697,6 +1037,7 @@ function restoreUnit(list) {
   })
   bringUnitToFront(list)
   syncEmpty(); renderGroups(); renderDock(); save()
+  reveal(list)
 }
 
 function chipOf(lead, n, extraClass = '') {
@@ -740,21 +1081,22 @@ function renderDock() {
  * ------------------------------------------------------------------ */
 function newCardAt(x, y) {
   if (blocked()) return null
-  return createCard(
-    { x: clamp(x, 12, innerWidth - W - 12), y: clamp(y, 12, innerHeight - H - 40) },
-    { animate: true, focus: true },
-  )
+  return createCard({ x: Math.round(x), y: Math.round(y) }, { animate: true, focus: true })
 }
 
+/* Ctrl+Enter: o próximo nasce à direita; sem espaço à vista, embaixo. A mesa acompanha. */
 function spawnNextTo(c) {
-  let x = c.x + W + 26, y = c.y
-  if (x + W > innerWidth - 12) { x = c.x; y = c.y + H + 26 }
-  if (y + H > innerHeight - 30) { x = c.x + 30; y = c.y + 30 }
-  newCardAt(x, y)
+  const v = viewRect()
+  let x = c.x + wOf(c) + 26, y = c.y
+  if (x + W > v.x1 - 12 && c.y + hOf(c) + H + 26 <= v.y1 - 12) { x = c.x; y = c.y + hOf(c) + 26 }
+  const n = newCardAt(x, y)
+  if (n) reveal([n])
 }
 
+/* Um lugar livre perto do centro do que a janela mostra. */
 function freeSpot() {
-  const cx = (innerWidth - W) / 2, cy = (innerHeight - H) / 2
+  const v = viewRect()
+  const cx = (v.x0 + v.x1 - W) / 2, cy = (v.y0 + v.y1 - H) / 2
   for (let i = 0; i < 30; i++) {
     const x = cx + (i % 6) * 34 - 70 + rand(-6, 6), y = cy + Math.floor(i / 6) * 30 - 40 + rand(-6, 6)
     const taken = live().some((k) => Math.abs(k.x - x) < 24 && Math.abs(k.y - y) < 24)
@@ -764,7 +1106,9 @@ function freeSpot() {
 }
 
 board.addEventListener('dblclick', (e) => {
-  if (e.target === board) newCardAt(e.clientX - W / 2, e.clientY - H / 2)
+  if (e.target !== board && e.target !== world) return
+  const [x, y] = toWorld(e.clientX, e.clientY)
+  newCardAt(x - W / 2, y - H / 2)
 })
 
 /* ------------------------------------------------------------------ *
@@ -1148,6 +1492,7 @@ function layOut() {
   if (!o || !list.length) { say('Não há peças na ordem para dispor'); return }
   if (blocked()) return
   const before = [...cards.values()].map((k) => ({ k, x: k.x, y: k.y, z: k.z, g: k.g, stashed: k.stashed }))
+  const camBefore = { ...cam }
   // o que não está na leitura (de lado, fora da ordem) vai para fileiras abaixo, para nada ficar por baixo
   const used = new Set(list.flatMap((p) => p.cs))
   const rest = unitsFrom(live().filter((k) => !used.has(k))).map((u) => ({ cs: u, rest: true }))
@@ -1156,8 +1501,8 @@ function layOut() {
   let row = [], x = M
   const flow = (arr) => {
     for (const p of arr) {
-      const w = p.cs.length * W + (p.cs.length - 1) * GAP
-      if (row.length && x + w > innerWidth - M) { rows.push(row); row = []; x = M }
+      const w = p.cs.reduce((a, k) => a + wOf(k), 0) + (p.cs.length - 1) * GAP
+      if (row.length && x + w > Math.max(innerWidth, 1120) - M) { rows.push(row); row = []; x = M }
       row.push([p, x]); x += w + GX
     }
     if (row.length) rows.push(row)
@@ -1165,9 +1510,10 @@ function layOut() {
   }
   flow(list)
   flow(rest)
-  // enquanto a mesa não rola (Fase 7), fileiras demais se sobrepõem como fichas empilhadas
-  const room = innerHeight - TOP - 24 - H
-  const stepY = rows.length > 1 ? Math.max(64, Math.min(H + GY, room / (rows.length - 1))) : 0
+  // a mesa rola: as fileiras nunca se sobrepõem; cada uma tem a altura do seu maior cartão
+  const rowY = []
+  let yy = TOP
+  for (const r of rows) { rowY.push(yy); yy += Math.max(...r.flatMap(([p]) => p.cs.map(hOf))) + GY }
   // cada peça de vários cartões fica (ou vira) um grupo; o resto se solta
   for (const p of list) {
     let gid = null
@@ -1180,13 +1526,15 @@ function layOut() {
   }
   let n = 0
   rows.forEach((r, ri) => r.forEach(([p, x0]) => p.cs.forEach((k, i) => {
-    k.x = x0 + i * (W + GAP); k.y = TOP + ri * stepY; k.z = ++zTop
+    k.x = x0 + p.cs.slice(0, i).reduce((a, m) => a + wOf(m) + GAP, 0); k.y = rowY[ri]; k.z = ++zTop
     if (k.stashed) { k.stashed = false; k.el.classList.remove('stashed') }
     place(k); measure(k)
     if (!p.rest) n++
   })))
   cleanGroups(); renderGroups(); renderDock(); syncEmpty(); save()
   closeOrg()
+  // as fileiras começam no canto do mundo; a janela vai para lá, a 100%
+  Object.assign(cam, { x: 0, y: 0, z: 1 }); applyCam()
   sayUndo(`${n} cartões dispostos nesta ordem` + (rest.length ? '; os de fora ficaram embaixo' : ''), () => {
     for (const b of before) {
       if (!cards.has(b.k.id)) continue
@@ -1195,6 +1543,7 @@ function layOut() {
       place(b.k)
     }
     cleanGroups(); renderGroups(); renderDock(); syncEmpty(); save()
+    Object.assign(cam, camBefore); applyCam()
   })
 }
 
@@ -1443,6 +1792,7 @@ function chipDrag(e, chip, src) {
 
 /* ---------- abrir e fechar ---------- */
 function openOrg() {
+  clearSel()
   let o = curOrder()
   if (!o) {
     const units = mesaUnits()
@@ -1505,15 +1855,43 @@ function orgKey(e) {
 }
 
 addEventListener('keydown', (e) => {
+  // folhas e menu ficam por cima de tudo: Esc fecha, o resto não passa para a mesa
+  if (!sheet.hidden) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSheet() }
+    else if (!e.target.closest?.('#sheet')) e.stopPropagation()
+    return
+  }
+  if (e.key === 'F1') { e.preventDefault(); e.stopPropagation(); openShortcuts(); return }
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'e' && !e.target.closest?.('input, textarea')) {
+    e.preventDefault(); e.stopPropagation(); openExport(); return
+  }
+  if (!menu.hidden) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(); menuBtn.focus(); return }
+    if (e.target.closest?.('#menu')) return
+    closeMenu()
+  }
   if (!show.hidden) { orgKey(e); return }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
     const m = e.key.toLowerCase()
     if (m === 's') { e.preventDefault(); exportJSON(); return }
     if (m === 'o') { e.preventDefault(); importJSON(); return }
-    // Ctrl+N é reservado pelo navegador; no app desktop fica livre
+    // no navegador o Ctrl+N abre outra janela; no app desktop ele cria um cartão
     if (m === 'n' && disk) { e.preventDefault(); newCardAt(...freeSpot()); return }
+    // câmera: Ctrl+0 mostra tudo, Ctrl+1 volta a 100%, Ctrl + e Ctrl - aproximam e afastam
+    if (m === '0') { e.preventDefault(); fitAll(); return }
+    if (m === '1') { e.preventDefault(); zoomAt(innerWidth / 2, innerHeight / 2, 1, { glide: true }); return }
+    if (m === '+' || m === '=') { e.preventDefault(); zoomBy(1.2); return }
+    if (m === '-') { e.preventDefault(); zoomBy(1 / 1.2); return }
   }
-  if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.('.ProseMirror')) return
+  const typing = e.target.closest?.('.ProseMirror, input, textarea, select')
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undoMesa(); return }
+  if (sel.size && !typing && !e.ctrlKey && !e.metaKey) {
+    const size = e.altKey && { 1: 'p', 2: 'm', 3: 'g' }[e.key]
+    if (size) { e.preventDefault(); setSize([...sel], size); return }
+    if (!e.altKey && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); deleteSel(); return }
+    if (!e.altKey && e.key === 'Escape') { e.preventDefault(); clearSel(); return }
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey || typing) return
   const k = e.key.toLowerCase()
   if (k === 'n') { e.preventDefault(); newCardAt(...freeSpot()) }
   else if (k === 't') { e.preventDefault(); reopenLast() }
@@ -1582,31 +1960,415 @@ function importJSON() {
   inp.click()
 }
 
-/* Recuperação por instantâneo (sem interface por enquanto): no console,
- *   await cartoes.snapshots()   → lista
- *   await cartoes.restore(t)    → volta ao instantâneo t (o estado atual vira instantâneo antes) */
+/* Instantâneos: lista o que há no IndexedDB e, no app desktop, também em disco.
+ * Restaurar nunca destrói: o estado de agora vira um instantâneo antes. */
+async function listSnapshots() {
+  const by = new Map()
+  for (const s of await idbSnapList()) by.set(s.savedAt, { t: s.savedAt, n: s.cards?.length || 0, rec: s })
+  if (disk?.snapshots) {
+    try { for (const d of (await disk.snapshots()) || []) if (!by.has(d.t)) by.set(d.t, { t: d.t, n: d.n, rec: null }) } catch {}
+  }
+  return [...by.values()].sort((a, b) => b.t - a.t)
+}
+
+async function restoreSnapshot(t) {
+  if (readOnly) return 'Esta aba é somente leitura'
+  const hit = (await listSnapshots()).find((s) => s.t === t)
+  let snap = hit?.rec || null
+  if (hit && !snap) { try { snap = await disk.snapshotGet(t) } catch { snap = null } }
+  if (!snap || !Array.isArray(snap.cards)) return 'Instantâneo não encontrado'
+  // o estado de agora vira um instantâneo antes, para dar para voltar
+  const cur = { savedAt: Date.now(), cards: [...cards.values()].map(snapshotOf), trash, org }
+  flush()
+  await idbSnap(cur)
+  if (disk) { try { await disk.snapshot(cur) } catch {} }
+  ready = false // impede que o pagehide do reload regrave o estado antigo por cima
+  await idbChain
+  // a hora é tirada só agora: precisa ser mais nova que qualquer gravação já feita
+  const rec = { savedAt: Date.now() + 2, cards: snap.cards, trash: snap.trash || [], org: saneOrg(snap.org) }
+  await idbPut(rec)
+  lsSet(STORE, JSON.stringify(rec.cards)); lsSet(STORE + '.t', String(rec.savedAt)); lsSet(TRASH_KEY, JSON.stringify(rec.trash))
+  lsSet(ORG_KEY, JSON.stringify(rec.org))
+  if (disk) { try { await disk.save(rec) } catch {} }
+  location.reload()
+  return 'Restaurando…'
+}
+
+const docText = (d) => (d?.content || []).map((p) => (p.content || []).map((t) => t.text).join('')).join(' ').replace(/\s+/g, ' ').trim()
+
 window.cartoes = {
   export: exportJSON,
   import: importCards,
-  trash: () => trash.map((d) => ({ id: d.id, em: new Date(d.deletedAt).toLocaleString(), texto: (d.doc?.content || []).map((p) => (p.content || []).map((t) => t.text).join('')).join(' ').slice(0, 60) })),
+  trash: () => trash.map((d) => ({ id: d.id, em: new Date(d.deletedAt).toLocaleString(), texto: docText(d.doc).slice(0, 60) })),
   reopen: (id) => reviveFromTrash(id),
   ordens: () => JSON.parse(JSON.stringify(org)),
-  snapshots: async () => (await idbSnapList()).map((s) => ({ t: s.savedAt, quando: new Date(s.savedAt).toLocaleString(), cartoes: s.cards.length })),
-  restore: async (t) => {
-    if (readOnly) return 'Esta aba é somente leitura'
-    const snap = (await idbSnapList()).find((s) => s.savedAt === t)
-    if (!snap) return 'Instantâneo não encontrado'
-    const now = Date.now()
-    flush()
-    await idbSnap({ savedAt: now, cards: [...cards.values()].map(snapshotOf), trash, org })
-    ready = false // impede que o pagehide do reload regrave o estado antigo por cima
-    const rec = { savedAt: now + 1, cards: snap.cards, trash: snap.trash || [], org: saneOrg(snap.org) }
-    await idbPut(rec)
-    lsSet(STORE, JSON.stringify(rec.cards)); lsSet(STORE + '.t', String(rec.savedAt)); lsSet(TRASH_KEY, JSON.stringify(rec.trash))
-    lsSet(ORG_KEY, JSON.stringify(rec.org))
-    location.reload()
-    return 'Restaurando…'
+  // texto do documento, sem gravar nada: cartoes.exportText('mesa' | idDaOrdem, 'corrido'|'secao'|'ficha', 'txt'|'md'|'pdf')
+  exportText: (src = 'mesa', model = 'corrido', format = 'txt') => {
+    const x = exportSources().find((k) => k.id === src)
+    return x ? renderExport(exportData(x), model, format) : null
   },
+  snapshots: async () => (await listSnapshots()).map((s) => ({ t: s.t, quando: new Date(s.t).toLocaleString(), cartoes: s.n })),
+  restore: restoreSnapshot,
+}
+
+/* ------------------------------------------------------------------ *
+ *  Menu ≡ e folhas (lixeira, instantâneos, atalhos)
+ * ------------------------------------------------------------------ */
+const menuBtn = document.getElementById('menu-btn')
+const menu = document.getElementById('menu')
+const sheet = document.getElementById('sheet')
+const sheetBody = document.getElementById('sheet-body')
+const nCards = (n) => (n === 1 ? '1 cartão' : `${n} cartões`)
+const elt = (tag, cls, text) => {
+  const e = document.createElement(tag)
+  if (cls) e.className = cls
+  if (text != null) e.textContent = text
+  return e
+}
+
+const MENU = [
+  { label: 'Exportar…', key: 'Ctrl+E', run: () => openExport() },
+  null,
+  { label: 'Importar backup…', key: 'Ctrl+O', run: () => importJSON() },
+  { label: 'Fazer backup (.json)', key: 'Ctrl+S', run: () => exportJSON() },
+  null,
+  { label: () => (trash.length ? `Lixeira (${trash.length})` : 'Lixeira'), key: 'T devolve o último', run: () => openTrash() },
+  { label: 'Instantâneos', key: '', run: () => openSnapshots() },
+  null,
+  { label: 'Atalhos', key: 'F1', run: () => openShortcuts() },
+]
+
+function openMenu() {
+  menu.replaceChildren()
+  for (const it of MENU) {
+    if (!it) { menu.append(elt('hr')); continue }
+    const b = elt('button')
+    b.setAttribute('role', 'menuitem')
+    b.append(elt('span', null, typeof it.label === 'function' ? it.label() : it.label), elt('kbd', null, it.key))
+    b.onclick = () => { closeMenu(); it.run() }
+    menu.append(b)
+  }
+  menu.hidden = false
+  menuBtn.setAttribute('aria-expanded', 'true')
+}
+function closeMenu() {
+  menu.hidden = true
+  menuBtn.setAttribute('aria-expanded', 'false')
+}
+menuBtn.onclick = () => (menu.hidden ? openMenu() : closeMenu())
+addEventListener('pointerdown', (e) => {
+  if (!menu.hidden && !menu.contains(e.target) && !menuBtn.contains(e.target)) closeMenu()
+}, true)
+menu.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+  e.preventDefault()
+  const items = [...menu.querySelectorAll('button')]
+  const i = items.indexOf(document.activeElement)
+  items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus()
+})
+
+function openSheet(title, { wide = false } = {}) {
+  closeMenu()
+  document.activeElement?.blur?.()
+  document.getElementById('sheet-title').textContent = title
+  sheet.classList.toggle('wide', wide)
+  sheetBody.replaceChildren()
+  sheet.hidden = false
+  return sheetBody
+}
+function closeSheet() { sheet.hidden = true; sheetBody.replaceChildren(); sheetBody.className = '' }
+document.getElementById('sheet-close').onclick = closeSheet
+sheet.addEventListener('pointerdown', (e) => { if (e.target === sheet) closeSheet() })
+
+function openTrash() {
+  const body = openSheet('Lixeira')
+  const draw = () => {
+    body.replaceChildren()
+    if (!trash.length) { body.append(elt('p', 'sheet-empty', 'A lixeira está vazia.')); return }
+    body.append(elt('p', 'sheet-note', `Os últimos ${TRASH_MAX} cartões excluídos ficam aqui. Devolver põe o cartão de volta na mesa, no lugar onde estava.`))
+    const ul = elt('ul', 'rows')
+    for (const d of [...trash].reverse()) {
+      const li = elt('li')
+      const main = elt('div', 'r-main')
+      main.append(elt('div', 'r-text', docText(d.doc) || '(sem texto)'))
+      const meta = elt('div', 'r-meta')
+      if (d.cat) meta.append(elt('span', 'r-cat c-' + d.cat, CAT_LABEL[d.cat]), ' · ')
+      meta.append('excluído em ' + when(d.deletedAt))
+      main.append(meta)
+      const b = elt('button', 'act', 'devolver')
+      b.onclick = () => {
+        if (blocked()) return
+        const c = reviveFromTrash(d.id)
+        c?.view.dom.blur()
+        draw()
+      }
+      li.append(main, b)
+      ul.append(li)
+    }
+    body.append(ul)
+  }
+  draw()
+}
+
+async function openSnapshots() {
+  const body = openSheet('Instantâneos')
+  body.append(elt('p', 'sheet-empty', 'Procurando…'))
+  const list = await listSnapshots()
+  if (sheet.hidden) return
+  body.replaceChildren()
+  if (!list.length) {
+    body.append(elt('p', 'sheet-empty', DEMO_MODE
+      ? 'A demonstração não guarda instantâneos.'
+      : 'Ainda não há instantâneos. O primeiro é guardado depois de alguns minutos de uso.'))
+    return
+  }
+  body.append(elt('p', 'sheet-note', 'Cópias automáticas da mesa inteira (cartões, lixeira e ordens), feitas a cada 5 minutos de atividade. Voltar a uma delas não apaga nada: o estado de agora vira um instantâneo antes.'))
+  const ul = elt('ul', 'rows')
+  for (const s of list) {
+    const li = elt('li')
+    const main = elt('div', 'r-main')
+    main.append(elt('div', 'r-text', when(s.t)), elt('div', 'r-meta', nCards(s.n)))
+    const b = elt('button', 'act', 'voltar a este')
+    b.onclick = () => {
+      ul.querySelectorAll('.asking').forEach((x) => x.classList.remove('asking'))
+      ul.querySelectorAll('.r-ask, .r-yes, .r-no').forEach((x) => x.remove())
+      ul.querySelectorAll('button.act').forEach((x) => { x.hidden = false })
+      li.classList.add('asking')
+      b.hidden = true
+      const yes = elt('button', 'act r-yes', 'sim, voltar')
+      const no = elt('button', 'act quiet r-no', 'cancelar')
+      yes.onclick = async () => {
+        yes.disabled = true
+        const msg = await restoreSnapshot(s.t)
+        if (msg !== 'Restaurando…') { closeSheet(); say(msg) }
+      }
+      no.onclick = () => { li.classList.remove('asking'); li.querySelectorAll('.r-ask, .r-yes, .r-no').forEach((x) => x.remove()); b.hidden = false }
+      li.append(yes, no, elt('div', 'r-ask', `A mesa volta a como estava em ${when(s.t)}. O que existe agora fica guardado como o instantâneo mais recente.`))
+    }
+    li.append(main, b)
+    ul.append(li)
+  }
+  body.append(ul)
+}
+
+/* ------------------------------------------------------------------ *
+ *  Exportar: documento legível (PDF, TXT, MD) a partir de uma ordem
+ *  ou da leitura da mesa. Peças postas de lado não saem.
+ * ------------------------------------------------------------------ */
+const desk = window.cartoesDisk || null // exportar não toca nos dados: vale também no demo
+const EXP_KEY = 'cartoes.ui.exportar'
+const MODEL_INFO = {
+  corrido: ['texto corrido', 'só o texto, um cartão depois do outro'],
+  secao: ['por seção', 'cada cartão vira uma seção numerada, com a categoria'],
+  ficha: ['ficha completa', 'número, categoria, texto e as notas da ordem'],
+}
+const FORMAT_INFO = { pdf: 'PDF', txt: 'TXT', md: 'MD (markdown)' }
+
+const parasOf = (c) => {
+  const out = []
+  c.view.state.doc.forEach((p) => {
+    const runs = []
+    p.forEach((t) => runs.push({ text: t.text, strong: t.marks.some((m) => m.type.name === 'strong'), em: t.marks.some((m) => m.type.name === 'em') }))
+    out.push(runs)
+  })
+  return out
+}
+const cardData = (c) => ({ cat: c.cat, paras: parasOf(c) })
+
+/* Fontes possíveis: cada ordem (salva ou em teste) e a leitura da mesa. */
+function exportSources() {
+  const list = org.orders.map((o) => ({ id: o.id, label: o.name ? `«${o.name}»` : 'ordem em teste, sem nome', order: o }))
+  list.push({ id: 'mesa', label: 'leitura da mesa (de cima para baixo, da esquerda para a direita)', order: null })
+  return list
+}
+function exportData(src) {
+  if (!src.order) {
+    return { name: '', note: '', aside: 0, pieces: mesaUnits().map((u) => ({ note: '', cards: u.map(cardData) })) }
+  }
+  const all = piecesOf(src.order)
+  const read = all.filter((p) => !p.it.aside)
+  return {
+    name: src.order.name || '', note: src.order.note || '', aside: all.length - read.length,
+    pieces: read.map((p) => ({ note: src.order.notes[leadOf(p).id] || '', cards: p.cs.map(cardData) })),
+  }
+}
+const renderExport = (data, model, format) =>
+  format === 'txt' ? toTxt(data, model) : format === 'md' ? toMd(data, model) : toHtml(data, model)
+
+function download(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }))
+  const a = document.createElement('a')
+  a.href = url; a.download = name
+  document.body.append(a); a.click(); a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+/* Grava o documento: diálogo de salvar no app desktop; download (ou impressão, no PDF) no navegador. */
+async function exportDocument(data, model, format) {
+  const name = fileName(data.name, format)
+  const text = renderExport(data, model, format)
+  if (desk?.exportFile) {
+    let r
+    try { r = await (format === 'pdf' ? desk.exportPdf({ name, html: text }) : desk.exportFile({ name, ext: format, text })) }
+    catch { r = { ok: false } }
+    if (r?.canceled) return false
+    if (!r?.ok) { say('Não consegui gravar o arquivo. Nada foi alterado; tente outra pasta.'); return false }
+    sayAct(`Exportei «${r.name}» · está em ${r.dir}`, 'mostrar na pasta', () => desk.exportReveal?.())
+    return true
+  }
+  if (format === 'pdf') {
+    // sem o app desktop, o PDF sai pela impressão do navegador ("Salvar como PDF")
+    const f = document.createElement('iframe')
+    f.style.cssText = 'position:fixed;width:0;height:0;border:0;visibility:hidden'
+    f.srcdoc = text
+    f.onload = () => { try { f.contentWindow.focus(); f.contentWindow.print() } finally { setTimeout(() => f.remove(), 60e3) } }
+    document.body.append(f)
+    say('Na janela de impressão, escolha “Salvar como PDF”')
+    return true
+  }
+  // alguns navegadores trocam por "download" um nome com acento: no download vai sem acento
+  const plainName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '')
+  download(plainName, text, format === 'md' ? 'text/markdown;charset=utf-8' : 'text/plain;charset=utf-8')
+  say(`Exportei «${plainName}» · está na pasta de downloads`)
+  return true
+}
+
+function openExport() {
+  const sources = exportSources()
+  let pref = {}
+  try { pref = JSON.parse(lsGet(EXP_KEY)) || {} } catch {}
+  const st = {
+    src: sources.find((x) => x.id === org.cur)?.id || sources[0].id,
+    model: MODEL_INFO[pref.model] ? pref.model : 'corrido',
+    format: FORMAT_INFO[pref.format] ? pref.format : 'pdf',
+  }
+  const body = openSheet('Exportar', { wide: true })
+  body.classList.add('exp')
+  const left = elt('div', 'exp-opts'), right = elt('div', 'exp-side')
+
+  const field = (label) => { const f = elt('div', 'exp-field'); f.append(elt('div', 'exp-label', label)); left.append(f); return f }
+  const fo = field('ordem')
+  const sel = elt('select'); sel.id = 'exp-src'
+  for (const x of sources) { const o = elt('option', null, x.label); o.value = x.id; sel.append(o) }
+  sel.value = st.src
+  fo.append(sel)
+  const info = elt('div', 'exp-info'); info.id = 'exp-info'
+  fo.append(info)
+
+  const choice = (f, name, entries) => {
+    const box = elt('div', 'exp-choice')
+    for (const [value, label, hint] of entries) {
+      const b = elt('button', null, label)
+      b.dataset.v = value; b.dataset.k = name
+      if (hint) b.title = hint
+      b.onclick = () => { st[name] = value; draw() }
+      box.append(b)
+    }
+    f.append(box)
+    return box
+  }
+  const fm = field('modelo')
+  choice(fm, 'model', Object.entries(MODEL_INFO).map(([k, [l, h]]) => [k, l, h]))
+  const hint = elt('div', 'exp-info'); fm.append(hint)
+  choice(field('formato'), 'format', Object.entries(FORMAT_INFO).map(([k, l]) => [k, l]))
+
+  const acts = elt('div', 'exp-acts')
+  const go = elt('button', 'act primary', 'exportar…'); go.id = 'exp-go'
+  const cancel = elt('button', 'act quiet', 'cancelar')
+  cancel.onclick = closeSheet
+  acts.append(go, cancel)
+  left.append(acts)
+
+  right.append(elt('div', 'exp-label', 'pré-visualização (começo do documento)'))
+  const pv = elt('div', 'exp-preview'); pv.id = 'exp-preview'
+  right.append(pv)
+  body.append(left, right)
+
+  const draw = () => {
+    const src = sources.find((x) => x.id === st.src)
+    const data = exportData(src)
+    const n = data.pieces.reduce((a, p) => a + p.cards.length, 0)
+    info.textContent = nCards(n) + (data.aside ? ` · ${data.aside} de lado não entra${data.aside === 1 ? '' : 'm'}` : '')
+    hint.textContent = MODEL_INFO[st.model][1]
+    body.querySelectorAll('.exp-choice button').forEach((b) => b.classList.toggle('on', st[b.dataset.k] === b.dataset.v))
+    go.disabled = n === 0
+    pv.className = 'exp-preview ' + st.format
+    pv.replaceChildren()
+    if (!n) { pv.append(elt('p', 'sheet-empty', 'Não há cartões escritos nesta leitura.')); return }
+    const total = blocksOf(data, st.model).length, MAX = 9
+    if (st.format === 'pdf') {
+      const page = elt('div', 'pv-page')
+      // miolo montado por toHtmlBody, que escapa todo o texto do usuário
+      page.innerHTML = toHtmlBody(data, st.model, MAX)
+      pv.append(page)
+    } else {
+      const text = renderExport(data, st.model, st.format)
+      pv.append(elt('pre', null, text.split('\n').slice(0, 22).join('\n')))
+    }
+    if (total > MAX) pv.append(elt('div', 'pv-more', '… o documento continua'))
+  }
+  sel.onchange = () => { st.src = sel.value; draw() }
+  go.onclick = async () => {
+    lsSet(EXP_KEY, JSON.stringify({ model: st.model, format: st.format }))
+    go.disabled = true
+    const done = await exportDocument(exportData(sources.find((x) => x.id === st.src)), st.model, st.format)
+    go.disabled = false
+    if (done) closeSheet()
+  }
+  draw()
+}
+
+const SHORTCUTS = [
+  ['Na mesa', [
+    ['Duplo clique no fundo ou N', 'novo cartão'],
+    ['Arrastar o fundo · roda do mouse', 'mover a mesa'],
+    ['Ctrl + roda · Ctrl + e Ctrl −', 'zoom'],
+    ['Ctrl+0 · Ctrl+1', 'ver todos os cartões · voltar a 100%'],
+    ['Shift + arrastar no fundo', 'seleciona os cartões dentro da caixa'],
+    ['Shift ou Ctrl + clique num cartão', 'põe ou tira da seleção; arrastar um selecionado move todos'],
+    ['Delete · Esc (com seleção)', 'exclui os selecionados · solta a seleção'],
+    ['Alt+1 · Alt+2 · Alt+3', 'tamanho do cartão (ou dos selecionados): P · M · G'],
+    ['Ctrl+Z (sem cursor num cartão)', 'desfaz mover, tamanho e ações em lote'],
+    ['Arrastar pela faixa de cima do cartão', 'mover (o texto nunca arrasta)'],
+    ['Encostar um cartão na borda de outro', 'agrupar; Shift + arrastar solta do grupo'],
+    ['T', 'devolve o último cartão excluído'],
+    ['E', 'abre o organizador'],
+    ['Ctrl+E', 'exporta um documento (PDF, TXT ou MD)'],
+    ['Ctrl+S', 'faz um backup (.json)'],
+    ['Ctrl+O', 'importa um backup (só acrescenta)'],
+    ['F1', 'esta lista'],
+  ]],
+  ['Escrevendo num cartão', [
+    ['Ctrl+Enter', 'cria o próximo cartão ao lado'],
+    ['Esc', 'tira o cursor do cartão'],
+    ['**texto** ou Ctrl+B', 'negrito'],
+    ['*texto*, _texto_ ou Ctrl+I', 'itálico'],
+    ['Backspace logo depois de ** ou *', 'desfaz a conversão'],
+    ['Ctrl+Z · Ctrl+Shift+Z', 'desfazer · refazer'],
+    ['Backspace num cartão vazio', 'apaga o cartão'],
+  ]],
+  ['No organizador', [
+    ['← →', 'ler a peça anterior · a próxima'],
+    ['Alt + ← →', 'mover a peça'],
+    ['↑ · ↓', 'pôr de lado · devolver à leitura'],
+    ['R', 'embaralhar'],
+    ['C', 'notas'],
+    ['Ctrl+S', 'salvar a ordem com um nome'],
+    ['Ctrl+Z · Ctrl+Shift+Z', 'desfazer · refazer'],
+    ['Esc', 'voltar à mesa'],
+  ]],
+]
+
+function openShortcuts() {
+  const body = openSheet('Atalhos')
+  const table = elt('table', 'keys')
+  for (const [title, rows] of SHORTCUTS) {
+    const h = elt('tr'); const th = elt('th', null, title); th.colSpan = 2; h.append(th); table.append(h)
+    for (const [k, what] of rows) {
+      const tr = elt('tr'); const td = elt('td'); td.append(elt('kbd', null, k)); tr.append(td, elt('td', null, what)); table.append(tr)
+    }
+  }
+  body.append(table)
 }
 
 /* ------------------------------------------------------------------ *
@@ -1666,7 +2428,8 @@ async function claimWriter() {
 async function start() {
   await claimWriter()
   db = await idbOpen()
-  if (DEMO_MODE) { ready = true; demo(); return }
+  if (DEMO_MODE) { ready = true; paintSaved('saved'); applyCam(); demo(); return }
+  loadCam()
   const { list, lost, diskWarn } = await load()
   let lostNow = lost
   for (const d of list) {
@@ -1681,8 +2444,13 @@ async function start() {
   pruneOrg()
   if (cards.size) {
     cleanGroups(); renderGroups(); renderDock()
+    // se nada do que existe aparece na janela (janela menor, câmera antiga), enquadra tudo (I1)
+    const v = viewRect()
+    const seen = live().some((k) => k.x < v.x1 - 40 && k.x + wOf(k) > v.x0 + 40 && k.y < v.y1 - 40 && k.y + hOf(k) > v.y0 + 40)
+    if (live().length && !seen) fitAll({ glide: false })
   } else if (!readOnly) newCardAt(...freeSpot()) // primeira visita: um cartão em branco, cursor piscando
   ready = true
+  paintSaved(readOnly ? 'ro' : 'saved')
   if (readOnly) {
     clearTimeout(toastTimer)
     toast.textContent = WARN_RO

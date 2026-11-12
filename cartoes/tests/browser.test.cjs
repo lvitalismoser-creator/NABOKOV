@@ -205,3 +205,84 @@ test('instantâneo guarda o estado de abertura e restore volta a ele', async () 
   assert.ok((await page.evaluate(() => cartoes.snapshots())).length >= 2) // o estado anterior virou instantâneo
   await ctx.close()
 })
+
+test('I8: Backspace num cartão só com espaços apaga os espaços, não o cartão', async () => {
+  const { ctx, page, errors } = await fresh()
+  await page.goto(URL_APP); await page.waitForSelector('.ProseMirror-focused')
+  await page.keyboard.type('   ')
+  await sleep(700) // o histórico junta edições feitas em menos de meio segundo
+  await page.keyboard.press('Backspace')
+  assert.equal(await page.locator('.card:not(.leaving)').count(), 1)
+  assert.equal(await page.$eval('.ProseMirror', (e) => e.textContent), '  ')
+  await page.keyboard.press('Control+z')        // o que foi apagado volta
+  assert.equal(await page.$eval('.ProseMirror', (e) => e.textContent), '   ')
+  for (let i = 0; i < 3; i++) await page.keyboard.press('Backspace')
+  assert.equal(await page.locator('.card:not(.leaving)').count(), 1) // vazio de verdade, ainda aqui
+  await page.keyboard.press('Backspace')        // só agora o cartão sai
+  await sleep(350)
+  assert.equal(await page.locator('.card').count(), 0)
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
+
+test('I7: Backspace logo depois de uma regra markdown desfaz a conversão', async () => {
+  const { ctx, page, errors } = await fresh()
+  await page.goto(URL_APP); await page.waitForSelector('.ProseMirror-focused')
+  await page.keyboard.type('um **forte**')
+  assert.equal(await page.$eval('.ProseMirror', (e) => e.querySelector('strong')?.textContent), 'forte')
+  await page.keyboard.press('Backspace')
+  assert.equal(await page.$eval('.ProseMirror', (e) => e.textContent), 'um **forte**')
+  assert.equal(await page.locator('.ProseMirror strong').count(), 0)
+  await page.keyboard.press('Backspace')        // daqui em diante é um Backspace comum
+  assert.equal(await page.$eval('.ProseMirror', (e) => e.textContent), 'um **forte*')
+  await page.keyboard.type(' e _leve_')
+  assert.equal(await page.$eval('.ProseMirror', (e) => e.querySelector('em')?.textContent), 'leve')
+  await page.keyboard.type('x'); await page.keyboard.press('Backspace') // já não é "logo depois"
+  assert.equal(await page.$eval('.ProseMirror', (e) => e.querySelector('em')?.textContent), 'leve')
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
+
+test('pontinho de salvo: pisca ao gravar, cinza com a hora depois, vermelho se falhar', async () => {
+  const { ctx, page, errors } = await fresh()
+  await page.goto(URL_APP); await page.waitForSelector('.ProseMirror-focused')
+  const dot = page.locator('#saved')
+  assert.equal(await dot.getAttribute('class'), 'saved')
+  await page.keyboard.type('texto')
+  assert.equal(await dot.getAttribute('class'), 'saving')
+  assert.ok(await eventually(async () => (await dot.getAttribute('class')) === 'saved'))
+  assert.match(await dot.getAttribute('data-tip'), /^salvo às \d\d:\d\d · neste navegador$/)
+  assert.equal(await dot.getAttribute('aria-label'), await dot.getAttribute('data-tip'))
+  // falha em todos os destinos: vermelho; quando volta a gravar, cinza de novo
+  await page.evaluate(() => {
+    window.__set = Storage.prototype.setItem
+    window.__tx = IDBDatabase.prototype.transaction
+    Storage.prototype.setItem = () => { throw new Error('cheio') }
+    IDBDatabase.prototype.transaction = () => { throw new Error('sem banco') }
+  })
+  await page.keyboard.type(' mais')
+  assert.ok(await eventually(async () => (await dot.getAttribute('class')) === 'failed'))
+  assert.match(await dot.getAttribute('data-tip'), /não consegui salvar/)
+  await page.keyboard.type('!')
+  assert.equal(await dot.getAttribute('class'), 'failed') // não finge que está gravando
+  await page.evaluate(() => { Storage.prototype.setItem = window.__set; IDBDatabase.prototype.transaction = window.__tx })
+  await page.keyboard.type('?')
+  assert.ok(await eventually(async () => (await dot.getAttribute('class')) === 'saved'))
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
+
+test('pontinho de salvo: aba somente leitura e demo dizem o que são', async () => {
+  const ctx = await browser.newContext()
+  const page = await ctx.newPage()
+  await page.goto(URL_APP); await page.waitForSelector('.ProseMirror-focused')
+  await page.keyboard.type('da dona'); await sleep(700)
+  const page2 = await ctx.newPage()
+  await page2.goto(URL_APP); await sleep(500)
+  assert.equal(await page2.locator('#saved').getAttribute('class'), 'ro')
+  assert.match(await page2.locator('#saved').getAttribute('data-tip'), /somente leitura/)
+  const page3 = await ctx.newPage()
+  await page3.goto(URL_APP + '#demo'); await sleep(500)
+  assert.match(await page3.locator('#saved').getAttribute('data-tip'), /só nesta demonstração$/)
+  await ctx.close()
+})
