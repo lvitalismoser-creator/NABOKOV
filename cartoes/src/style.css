@@ -141,7 +141,7 @@ body.map .paper::after { display: none; }
 .card:hover .sizes { opacity: 1; }
 .sizes button {
   min-width: 12px; padding: 0; border: 0; background: none; cursor: pointer;
-  font: italic 12.5px/22px var(--serif); color: rgba(90, 70, 40, .62);
+  font: italic 12.5px/22px var(--serif); color: rgba(74, 56, 30, .9);
 }
 .sizes button { min-width: 14px; }
 .sizes button:hover { color: var(--ink); }
@@ -152,7 +152,7 @@ body.map .paper::after { display: none; }
   width: 24px; height: 24px; padding: 0; border-radius: 3px;
   border: 0; background: none; cursor: pointer;
   font: 400 19px/20px var(--serif);
-  color: rgba(90, 70, 40, .5);
+  color: rgba(74, 56, 30, .85);
   opacity: 0; transition: opacity .2s, color .15s;
 }
 .card:hover .close { opacity: 1; }
@@ -275,14 +275,14 @@ body.is-empty #empty { display: flex; }
   --cc: #6b5a3a;
   padding: 0; border: 0; background: none; cursor: pointer;
   font: italic 12.5px/20px var(--serif); letter-spacing: .02em;
-  color: rgba(90, 70, 40, .68);
+  color: rgba(74, 56, 30, .9);
   opacity: 0; pointer-events: none;
   transition: opacity .2s, color .15s;
 }
 .cats button[data-cat="cena"]  { --cc: #b5483a; }
 .cats button[data-cat="nota"]  { --cc: #3f6f9a; }
-.cats button[data-cat="lugar"] { --cc: #4d7a4f; }
-.card:hover .cats button { opacity: .85; pointer-events: auto; }
+.cats button[data-cat="lugar"] { --cc: #3f6b42; }
+.card:hover .cats button { opacity: 1; pointer-events: auto; }
 .cats button:hover { color: var(--cc); opacity: 1; }
 .cats button.on {
   opacity: 1; pointer-events: auto; color: var(--cc); font-weight: 600;
@@ -296,7 +296,7 @@ body.is-empty #empty { display: flex; }
   display: flex; align-items: center; gap: 4px;
   border: 0; background: none; cursor: pointer;
   font: italic 12.5px/22px var(--serif);
-  color: rgba(63, 111, 154, .95);
+  color: #2f6190;
   opacity: 0; transition: opacity .2s, color .15s;
 }
 .card:hover .stash { opacity: 1; }
@@ -365,7 +365,7 @@ body.map .paper { cursor: zoom-in; }
 /* a linha vermelha da ficha vira uma faixa na cor da categoria */
 body.map .card[data-cat="cena"]  .paper::before { top: 0; height: 28px; background: #b5483a; opacity: .85; }
 body.map .card[data-cat="nota"]  .paper::before { top: 0; height: 28px; background: #3f6f9a; opacity: .85; }
-body.map .card[data-cat="lugar"] .paper::before { top: 0; height: 28px; background: #4d7a4f; opacity: .85; }
+body.map .card[data-cat="lugar"] .paper::before { top: 0; height: 28px; background: #3f6b42; opacity: .85; }
 
 /* ---------- seleção múltipla ---------- */
 
@@ -411,7 +411,7 @@ body.has-stash #dock { display: flex; }
 body.showing #dock, body.showing #corner { visibility: hidden; }
 .dock-label {
   flex: none; align-self: center;
-  font: italic 13px var(--serif); color: rgba(60, 45, 25, .7);
+  font: italic 13px var(--serif); color: rgba(60, 45, 25, .88);
 }
 
 .chip {
@@ -446,7 +446,7 @@ body.showing #dock, body.showing #corner { visibility: hidden; }
 }
 .chip.c-cena  .ccat { color: #b5483a; }
 .chip.c-nota  .ccat { color: #3f6f9a; }
-.chip.c-lugar .ccat { color: #4d7a4f; }
+.chip.c-lugar .ccat { color: #3f6b42; }
 .cn, .cnum {
   position: absolute; right: 6px; font: 600 9px/10px var(--serif); color: rgba(60, 45, 25, .6);
 }
@@ -536,7 +536,7 @@ body.is-empty #organize { opacity: .4; }
 .rows .r-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rows .r-meta { font-size: 12.5px; color: rgba(60, 45, 25, .55); }
 .rows .r-cat { font-style: italic; font-weight: 600; }
-.r-cat.c-cena { color: #b5483a; } .r-cat.c-nota { color: #3f6f9a; } .r-cat.c-lugar { color: #4d7a4f; }
+.r-cat.c-cena { color: #b5483a; } .r-cat.c-nota { color: #3f6f9a; } .r-cat.c-lugar { color: #3f6b42; }
 .sheet-box button.act {
   flex: none; padding: 5px 11px; border: 0; border-radius: 3px; cursor: pointer;
   background: rgba(63, 111, 154, .1); color: #2a5a85; font: italic 14px var(--serif);
@@ -643,7 +643,7 @@ body.is-empty #organize { opacity: .4; }
 }
 .show-top button:hover { opacity: 1; text-decoration-color: currentColor; }
 .show-top .back { text-decoration: none; opacity: .85; font-style: normal; }
-.org-label { opacity: .5; font-size: 13px; margin-right: -12px; }
+.org-label { opacity: .62; font-size: 13px; margin-right: -12px; }
 #org-name {
   font-style: normal; font-size: 16px; opacity: 1; text-decoration: none; white-space: pre;
   padding: 4px 10px; border-radius: 3px; background: rgba(251, 246, 229, .08);
@@ -741,7 +741,7 @@ body.is-empty #organize { opacity: .4; }
 .s-cat { position: absolute; top: 8px; left: 20px; font: italic 600 14px/22px var(--serif); }
 .c-cena .s-cat { color: #b5483a; }
 .c-nota .s-cat { color: #3f6f9a; }
-.c-lugar .s-cat { color: #4d7a4f; }
+.c-lugar .s-cat { color: #3f6b42; }
 .s-body {
   overflow-y: auto; padding: 4px 28px 14px; user-select: text; cursor: text;
   font-size: 20px; line-height: 32px; scrollbar-width: thin;
