@@ -104,6 +104,14 @@ test('cria .bak e instantâneos; arquivo quebrado é preservado e recuperado do 
   assert.doesNotThrow(readFile) // o arquivo voltou a ser válido
 })
 
+test('pontinho de salvo diz "em disco" depois de gravar o arquivo', async () => {
+  const { win } = await launch()
+  await win.keyboard.type('no arquivo')
+  assert.ok(await eventually(async () => (await win.locator('#saved').getAttribute('class')) === 'saved'))
+  assert.match(await win.locator('#saved').getAttribute('data-tip'), /^salvo às \d\d:\d\d · em disco$/)
+  assert.ok(fs.readFileSync(FILE, 'utf8').includes('no arquivo'))
+})
+
 test('a segunda instância não abre', async () => {
   await launch()
   const electronBin = require('electron')

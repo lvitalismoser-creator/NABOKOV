@@ -81,8 +81,24 @@ let db = null
 let saveTimer, firstDirty = 0
 const DEBOUNCE = 400, MAX_WAIT = 3000
 
+/* Pontinho de salvo: cinza = salvo, pisca enquanto há algo por gravar, vermelho se falhou. */
+const savedDot = document.getElementById('saved')
+const WHERE = DEMO_MODE ? 'só nesta demonstração' : disk ? 'em disco' : 'neste navegador'
+const hhmm = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+let savedAt = 0
+function paintSaved(state) {
+  const tip = state === 'ro' ? 'somente leitura · aberto em outra aba'
+    : state === 'failed' ? 'não consegui salvar · não feche esta janela'
+    : state === 'saving' ? 'salvando…'
+    : savedAt ? `salvo às ${hhmm(savedAt)} · ${WHERE}` : `tudo salvo · ${WHERE}`
+  savedDot.className = state
+  savedDot.dataset.tip = tip
+  savedDot.setAttribute('aria-label', tip)
+}
+
 function save() {
   if (!ready || readOnly) return
+  if (!saveFailed) paintSaved('saving')
   const now = Date.now()
   if (!firstDirty) firstDirty = now
   clearTimeout(saveTimer)
@@ -173,13 +189,17 @@ const ORG_KEY = DEMO_MODE ? 'cartoes.demo.org' : 'cartoes.org'
 let org = { orders: [], cur: null }
 
 let saveFailed = false
-function report(ok) {
+function report(ok, t) {
   if (ok) {
     if (saveFailed) { saveFailed = false; toast.classList.remove('show') }
+    savedAt = Math.max(savedAt, t)
+    // se já há outra edição esperando, o pontinho continua piscando até ela ser gravada
+    if (!firstDirty) paintSaved('saved')
     return
   }
   // nunca em silêncio: o usuário precisa saber que o texto não está sendo guardado
   saveFailed = true
+  paintSaved('failed')
   clearTimeout(toastTimer)
   toast.textContent = 'Não consegui salvar. Seus cartões continuam aqui, mas não feche esta janela.'
   toast.classList.add('show')
@@ -207,7 +227,7 @@ function flush(final = false) {
     // no app desktop o que importa é o arquivo; no navegador, qualquer um dos destinos
     const ok = disk ? diskOk : (lsOk || idbOk)
     if (!ok) console.error('cartoes: falha ao salvar')
-    report(ok)
+    report(ok, t)
   })
   return lsOk
 }
@@ -262,6 +282,7 @@ async function load() {
   if (parsed) cands.push({ t: lsT, cards: parsed, trash: lsTrash, org: lsOrg })
   let best = null
   for (const c of cands) if (!best || c.t > best.t) best = c
+  savedAt = best?.t || 0
   const source = best?.cards, rawTrash = best?.trash
   const diskWarn = drec?.warn || null
   if (Array.isArray(rawTrash)) {
@@ -1671,7 +1692,7 @@ async function claimWriter() {
 async function start() {
   await claimWriter()
   db = await idbOpen()
-  if (DEMO_MODE) { ready = true; demo(); return }
+  if (DEMO_MODE) { ready = true; paintSaved('saved'); demo(); return }
   const { list, lost, diskWarn } = await load()
   let lostNow = lost
   for (const d of list) {
@@ -1688,6 +1709,7 @@ async function start() {
     cleanGroups(); renderGroups(); renderDock()
   } else if (!readOnly) newCardAt(...freeSpot()) // primeira visita: um cartão em branco, cursor piscando
   ready = true
+  paintSaved(readOnly ? 'ro' : 'saved')
   if (readOnly) {
     clearTimeout(toastTimer)
     toast.textContent = WARN_RO
