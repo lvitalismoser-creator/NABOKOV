@@ -1,0 +1,111 @@
+@startuml UML_Camadas_Oscorp
+title Oscorp - Diagrama de Classes (controller, service, repository, dto)
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam defaultFontName SansSerif
+left to right direction
+
+package controller {
+  class ContaController
+  class PermissaoController
+  class SessaoController
+  class ImportacaoContasController
+}
+package service {
+  interface ContaService {
+    + listar() : List<ContaResponse>
+    + buscarPorId(id) : ContaResponse
+    + criar(req) : ContaResponse
+    + atualizar(id, req) : ContaResponse
+    + remover(id) : void
+    + atribuirPermissao(id, nome) : ContaResponse
+  }
+  class ContaServiceImpl
+  class PermissaoService
+  class SessaoService {
+    + login(req : LoginRequest) : LoginResponse
+  }
+  class ImportacaoContasService {
+    + importar() : ResumoImportacaoResponse
+  }
+  class LeitorContasArquivo {
+    + lerLinhas() : List<LinhaContaArquivo>
+    + converter(l) : ContaRequest
+  }
+  class LinhaContaArquivo <<record>>
+}
+package repository {
+  interface ContaRepository
+  interface PermissaoRepository
+  interface AuditoriaAcessoRepository
+}
+package dto {
+  class ContaRequest <<record>>
+  class ContaResponse <<record>>
+  class PermissaoRequest <<record>>
+  class PermissaoResponse <<record>>
+  class LoginRequest <<record>>
+  class LoginResponse <<record>>
+  class ResumoImportacaoResponse <<record>>
+  class FalhaLinhaImportacao <<record>>
+  class ErroApiResponse <<record>>
+}
+package model {
+  class Conta
+  class Permissao
+  class AuditoriaAcesso
+}
+package exception {
+  class ApiExceptionHandler
+  class EntidadeNaoEncontradaException
+  class ConflitoNegocioException
+  class AcessoNegadoException
+  class FalhaLeituraArquivoException
+}
+package config {
+  class CargaInicial <<CommandLineRunner>>
+  class SegurancaConfig
+}
+interface "JpaRepository<T, Long>" as Jpa
+
+ContaController --> ContaService
+PermissaoController --> PermissaoService
+SessaoController --> SessaoService
+ImportacaoContasController --> ImportacaoContasService
+
+ContaService <|.. ContaServiceImpl
+ContaServiceImpl --> ContaRepository
+ContaServiceImpl --> PermissaoRepository
+PermissaoService --> PermissaoRepository
+SessaoService --> ContaRepository
+SessaoService --> AuditoriaAcessoRepository
+ImportacaoContasService --> LeitorContasArquivo
+ImportacaoContasService --> ContaService
+LeitorContasArquivo ..> LinhaContaArquivo
+
+ContaRepository --|> Jpa
+PermissaoRepository --|> Jpa
+AuditoriaAcessoRepository --|> Jpa
+ContaRepository ..> Conta
+PermissaoRepository ..> Permissao
+AuditoriaAcessoRepository ..> AuditoriaAcesso
+
+ContaServiceImpl ..> ContaRequest
+ContaServiceImpl ..> ContaResponse
+SessaoService ..> LoginRequest
+SessaoService ..> LoginResponse
+LoginResponse --> ContaResponse
+PermissaoService ..> PermissaoRequest
+PermissaoService ..> PermissaoResponse
+ImportacaoContasService ..> ResumoImportacaoResponse
+ResumoImportacaoResponse --> FalhaLinhaImportacao
+
+ApiExceptionHandler ..> ErroApiResponse
+ApiExceptionHandler ..> EntidadeNaoEncontradaException
+ApiExceptionHandler ..> ConflitoNegocioException
+ApiExceptionHandler ..> AcessoNegadoException
+ApiExceptionHandler ..> FalhaLeituraArquivoException
+
+CargaInicial --> ContaRepository
+CargaInicial --> PermissaoRepository
+@enduml

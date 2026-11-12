@@ -1,0 +1,62 @@
+@startuml UML_Model_Oscorp
+title Oscorp - Diagrama de Classes (pacote model)
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam defaultFontName SansSerif
+
+abstract class Individuo <<MappedSuperclass>> {
+  - id : Long
+  - nome : String
+  - email : String
+  # Individuo(nome : String, email : String)
+  + {abstract} descreverPerfil() : String
+}
+
+abstract class Conta <<Entity: contas>> {
+  - login : String
+  - senha : String
+  - ativo : boolean
+  - permissoes : Set<Permissao>
+  # Conta(nome, email, login, senha)
+  + adicionarPermissao(p : Permissao) : void
+  + removerPermissao(p : Permissao) : void
+  + possuiPermissao(nome : String) : boolean
+  + possuiPermissao(p : Permissao) : boolean
+  + podeGerenciarContas() : boolean
+  + {abstract} getTipo() : String
+}
+
+class Diretor <<DIRETOR>> {
+  + descreverPerfil() : String
+  + podeGerenciarContas() : boolean
+  + getTipo() : String
+}
+
+class Colaborador <<COLABORADOR>> {
+  + descreverPerfil() : String
+  + getTipo() : String
+}
+
+class Permissao <<Entity: permissoes>> {
+  + {static} ROLE_DIRETOR : String
+  + {static} ROLE_COLABORADOR : String
+  - id : Long
+  - nome : String
+  - descricao : String
+  + equals(o : Object) : boolean
+  + hashCode() : int
+}
+
+class AuditoriaAcesso <<Entity: auditorias_acesso>> {
+  - id : Long
+  - dataHora : LocalDateTime
+  - sucesso : boolean
+  + AuditoriaAcesso(conta : Conta, sucesso : boolean)
+}
+
+Individuo <|-- Conta
+Conta <|-- Diretor
+Conta <|-- Colaborador
+Conta "*" -- "*" Permissao : permissoes\n(conta_permissoes)
+AuditoriaAcesso "*" --> "1" Conta : conta
+@enduml
