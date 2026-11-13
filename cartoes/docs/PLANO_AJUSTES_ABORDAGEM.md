@@ -138,8 +138,8 @@ Como no plano original, incluindo a decisão sobre a linha de atalhos `.org-keys
 
 ## Pendências ainda abertas
 
-- **Conferência do dono** nos instaladores 1.1.0 (Fase 6), 1.2.0 (7a), 1.3.0 (7b) e 1.4.0 (8). O 1.4.0 contém tudo: conferir só ele basta para as quatro fases.
-- **Validação:** começa quando o dono instalar o 1.4.0.
+- **Conferência do dono** das Fases 6, 7a, 7b e 8. O instalador **1.4.1** contém tudo (inclusive a correção feita depois do 1.4.0): conferir só ele basta para as quatro fases.
+- **Validação:** começa quando o dono instalar o 1.4.1.
 - DOCX/ODT à mão ou com biblioteca: só depois da validação.
 - ~~`.org-keys` fica ou sai: Fase 8.~~ Saiu (2026-11-12), a confirmar com o dono.
 - Escuta sobre o organizador: entra pelo diário (`USO.md`).

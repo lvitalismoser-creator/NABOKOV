@@ -6,7 +6,7 @@ Programa desktop para escritores: editor de texto com organização integrada, i
 
 ## Estado atual
 
-App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), pontinho de salvo, menu ≡ (lixeira, instantâneos, atalhos) e exportação TXT/MD/PDF (Fase 6), mesa infinita com deslocamento e zoom (Fase 7a), tamanhos P/M/G, seleção múltipla e modo mapa (Fase 7b), revisão de interface (Fase 8), lixeira, backup `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 72 testes automatizados (`npm test`). Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
+App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), pontinho de salvo, menu ≡ (lixeira, instantâneos, atalhos) e exportação TXT/MD/PDF (Fase 6), mesa infinita com deslocamento e zoom (Fase 7a), tamanhos P/M/G, seleção múltipla e modo mapa (Fase 7b), revisão de interface (Fase 8), lixeira, backup `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 73 testes automatizados (`npm test`). Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
 
 O estado de cada fase (feita / aguardando conferência do dono) fica em `docs/PLANO_FASES_5_A_8.md`.
 
@@ -70,8 +70,9 @@ Só estas três são aceitas. Qualquer outro elemento visível por padrão conti
 - **Desfazer da mesa:** `Ctrl+Z` sem cursor num cartão (`rememberMesa`/`undoMesa`) desfaz mover, tamanho e as ações em lote. As ações em lote também têm "desfazer" no aviso; `once()` garante que cada uma só é desfeita uma vez. Não há refazer.
 - **Modo mapa (Fase 7b):** abaixo de `MAP_Z` = 45% o `body` ganha a classe `map`: some o texto miúdo e aparece `.mapface` (primeiras 8 palavras, letra grande), com a faixa de cima na cor da categoria. No mapa o cartão inteiro arrasta e um clique aproxima até ele (`zoomToCard`).
 - **Dados:** `{ id, x, y, z, r, g, cat, s, stashed, sa, doc }` por cartão (`g` = grupo, `cat` = cena/nota/lugar, `s` = tamanho `'p'`/`'g'` ou `null` para M, `stashed`/`sa` = gaveta, `doc` = JSON do ProseMirror).
-- **Organizador (Fase 5)**, evolução do antigo "embaralhar" (botão "organizar" ou `E`). Estado `org = { orders, cur }`; ordem `{ id, name|null, note, notes: {idDoCartão: texto}, items: [{ ids, aside }], createdAt, updatedAt }`.
+- **Organizador (Fase 5)**, evolução do antigo "embaralhar" (botão "organizar" ou `E`). Estado `org = { orders, cur }`; ordem `{ id, name|null, note, notes: {idDoCartão: texto}, items: [{ ids, aside, split? }], createdAt, updatedAt }`.
   - **Uma ordem nunca mexe na mesa.** A exceção é "dispor na mesa": arruma em fileiras na ordem a partir do canto do mundo (a janela vai para lá, a 100%), com o que está de lado ou fora da ordem nas últimas fileiras, e pode ser desfeito pelo aviso (a câmera também volta).
+  - **A ordem em teste acompanha os grupos da mesa** (`syncGroups`, ao abrir o organizador): cartões agrupados depois de a ordem existir viram uma peça só, e os desagrupados viram peças soltas. Peças separadas de propósito na ordem (`split: true`) ficam como estão. Ordens com nome nunca são alteradas por isso.
   - Peça = um cartão ou um grupo. "Separar o grupo nesta ordem" vale só na ordem. "Pôr de lado" (`↑`/`↓`) mantém a peça na fileira, erguida e esmaecida, fora da leitura.
   - Há no máximo uma ordem sem nome ("em teste"). "Salvar" dá nome; numa ordem já nomeada vira "salvar como nova". Embaralhar uma ordem nomeada cria uma ordem em teste e deixa a nomeada intacta.
   - Cartões fora da ordem esperam na bandeja "fora da ordem": clique põe no fim, arrastar põe no lugar. Arrastar da fileira para a bandeja tira o cartão da ordem.
@@ -131,7 +132,7 @@ npm run dist:dir   # só o app descompactado: dist/win-unpacked/Cartões.exe
 ## Testes
 
 ```bash
-npm test              # rebuilda e roda tudo (node:test + Playwright, 72 testes, ~2 min)
+npm test              # rebuilda e roda tudo (node:test + Playwright, 73 testes, ~2 min)
 npm run test:browser  # persistência no navegador (contextos limpos)
 npm run test:electron # app desktop; isolado por CARTOES_DATA_DIR (arquivo e perfil do Chromium)
 ```
