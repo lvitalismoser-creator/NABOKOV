@@ -152,7 +152,7 @@ Plano original (7a + 7b):
 
 ## Fase 8 — Revisão de interface — feita em 2026-11-12, aguardando conferência do dono
 
-Instalador: `Cartoes-Setup-1.4.0.exe`. Vira ✅ quando o dono instalar e conferir. A janela de validação (2 semanas, `PLANO_AJUSTES_ABORDAGEM.md`) começa quando ele instalar esta versão.
+Instalador: `Cartoes-Setup-1.4.1.exe` (o 1.4.0 ficou sem a última correção, ver abaixo). Vira ✅ quando o dono instalar e conferir. A janela de validação (2 semanas, `PLANO_AJUSTES_ABORDAGEM.md`) começa quando ele instalar esta versão.
 
 **Como ficou:**
 
@@ -167,6 +167,11 @@ Instalador: `Cartoes-Setup-1.4.0.exe`. Vira ✅ quando o dono instalar e conferi
   2. "Dispor na mesa" desmanchava o arranjo interno dos grupos. Agora cada grupo vai como um bloco.
   3. A prévia do exportador mostrava só o começo. Agora mostra o documento inteiro.
 - **Testes:** 8 novos. Total: 72, todos passando.
+
+**Depois do instalador 1.4.0 (versão 1.4.1, 2026-11-13):**
+
+- Uma ordem criada antes de os cartões serem agrupados mostrava cada cartão como peça solta, e "dispor na mesa" soltava esses grupos. Agora a ordem em teste é sincronizada com os grupos da mesa ao abrir o organizador; o que foi separado de propósito numa ordem continua separado, e ordens com nome não mudam. Feito em outra sessão (commit `7367335`), com 1 teste. Total: 73.
+- Instalador: `Cartoes-Setup-1.4.1.exe`. **É este que vale para a conferência** das Fases 6 a 8, no lugar do 1.4.0.
 
 Plano original:
 
