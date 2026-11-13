@@ -325,3 +325,20 @@ test('dispor na mesa leva o grupo como um bloco: o arranjo interno dos cartões 
   assert.deepEqual(errors, [])
   await ctx.close()
 })
+
+test('ordem em teste acompanha os grupos feitos depois dela; dispor na mesa não os desmancha', async () => {
+  const cards = [
+    { id: 'a', x: 40, y: 80, g: 'g1', doc: doc('alfa') }, { id: 'b', x: 398, y: 80, g: 'g1', doc: doc('beta') },
+    { id: 'c', x: 40, y: 400, doc: doc('gama') },
+  ]
+  const org = { orders: [{ id: 'o1', name: null, note: '', notes: {}, createdAt: 1, updatedAt: 1,
+    items: ['a', 'b', 'c'].map((id) => ({ ids: [id], aside: false })) }], cur: 'o1' }
+  const { ctx, page, errors } = await open(cards, { 'cartoes.org': JSON.stringify(org) })
+  await organize(page)
+  assert.equal((await strip(page)).length, 2, 'o grupo (a, b) devia ser uma peça só')
+  await page.click('#org-layout')
+  await page.waitForSelector('#show[hidden]', { state: 'attached' })
+  assert.equal(await page.locator('.gframe').count(), 1)
+  assert.deepEqual(errors, [])
+  await ctx.close()
+})
