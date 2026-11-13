@@ -21,7 +21,7 @@ Consequências para quem trabalha aqui:
 
 ## Estado atual
 
-App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), pontinho de salvo, menu ≡ (lixeira, instantâneos, atalhos) e exportação TXT/MD/PDF (Fase 6), mesa infinita com deslocamento e zoom (Fase 7a), tamanhos P/M/G, seleção múltipla e modo mapa (Fase 7b), revisão de interface (Fase 8), lixeira, backup `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 73 testes automatizados (`npm test`). Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
+App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), pontinho de salvo, menu ≡ (lixeira, instantâneos, atalhos) e exportação TXT/MD/PDF (Fase 6), mesa infinita com deslocamento e zoom (Fase 7a), tamanhos P/M/G, seleção múltipla e modo mapa (Fase 7b), revisão de interface (Fase 8), lixeira, backup `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 73 testes automatizados (`npm test`). Versão 1.4.1. O instalador é gerado pelo dono na máquina dele (`npm run dist`); sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
 
 O estado de cada fase (feita / aguardando conferência do dono) fica em `docs/PLANO_FASES_5_A_8.md`.
 
@@ -30,7 +30,9 @@ Documentos de contexto, em `docs/`:
 - `docs/PLANO_AJUSTES_ABORDAGEM.md`: ajustes de 2026-11-11 (ordem das fases, como fechar uma fase, validação). **Vale sobre os outros planos.**
 - `docs/PLANO_FASES_5_A_8.md`: plano das fases e decisões de produto.
 - `docs/USO.md`: diário de uso (o dono anota quando quiser; o Claude pergunta no início de cada sessão e completa).
-- `docs/HANDOFF_*.md`: registros de sessões passadas (histórico; não são atualizados). O mais recente é `HANDOFF_2026-11-12.md` (Fases 6 a 8, decisões tomadas sozinho, o que não foi verificado e perguntas ao dono).
+- `docs/HANDOFF_*.md`: registros de sessões passadas (histórico; não são atualizados).
+  - `HANDOFF_2026-11-13.md`: **o mais recente; diz de onde retomar** (estado, instalador, pendências, ramos do git).
+  - `HANDOFF_2026-11-12.md`: Fases 6 a 8, decisões tomadas sem o dono, o que não foi verificado e perguntas a ele.
 - `docs/REVISAO_E_PLANO_SALVAMENTO.md`: histórico da revisão e do plano de salvamento (Fases 0–4).
 
 - `src/main.js`: lógica (ProseMirror, quadro, arrasto, persistência, organizador, menu, janela de exportar, demo)
@@ -138,6 +140,11 @@ npm run dist:dir   # só o app descompactado: dist/win-unpacked/Cartões.exe
 ```
 
 - electron-builder, configuração no campo `build` do `package.json`. O pacote leva só `index.html`, `electron/` e `package.json`; ProseMirror e esbuild são devDependencies porque já vão embutidos no `index.html`.
+- **Quem gera é o dono, no Windows dele.** Instaladores gerados numa sessão em nuvem não chegam até ele pelo chat (121 MB; não baixa). Na máquina dele:
+  - Se o PowerShell bloquear o `npm` ("execução de scripts foi desabilitada"), usar `npm.cmd` ou `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+  - O npm mais novo não executa scripts de instalação sem aprovação (aviso `install-scripts ... allowScripts`). Se o build falhar por causa do `esbuild`: `npm install-scripts approve esbuild electron-winstaller` e `npm install` de novo (não testado).
+  - O clone dele fica dentro do Dropbox, que pode segurar arquivos e causar `EPERM`/`EBUSY`: pausar a sincronização durante o build ou clonar fora do Dropbox.
+  - Não rodar `npm audit fix --force`: troca versões das ferramentas de build.
 - Gerar o instalador no Linux exige `wine` e `wine32` (o NSIS roda o desinstalador por ele). Foi assim que os instaladores 1.1.0 em diante foram gerados.
 - `"publish": null` no `build`: sem isso o electron-builder tenta adivinhar um destino de publicação pelo repositório git e falha no fim.
 - Sem ícone próprio (usa o do Electron) e sem assinatura de código: o Windows SmartScreen vai avisar na primeira execução. `signAndEditExecutable: false` evita a exigência de privilégio de symlink no build; para assinar/colocar ícone, remova essa opção e configure `win.icon` e um certificado.
@@ -173,7 +180,7 @@ npm run test:electron # app desktop; isolado por CARTOES_DATA_DIR (arquivo e per
   3. O dono instala e confere por alguns minutos que nada quebrou. Só então a fase vira ✅ no plano; até lá fica "feita, aguardando conferência".
 - **Diário de uso:** no início de cada sessão, perguntar ao dono se houve uso desde a última vez e registrar em `docs/USO.md`.
 - **Pendências num lugar só:** nos planos. Este arquivo só aponta para eles; os `HANDOFF_*` são histórico.
-- Git: o projeto é versionado em `lvitalismoser-creator/NABOKOV`, com a raiz do repositório uma pasta acima desta. Se a cópia local em `D:\` não tiver a pasta `.git`, a regra do commit não vale ali até alguém clonar o repositório (ou rodar `git init`).
+- Git: o projeto é versionado em `lvitalismoser-creator/NABOKOV`, com a raiz do repositório uma pasta acima desta. A `main` tem tudo. Os ramos `claude/festive-mccarthy-no3e4d` (outra versão da Fase 6, com DOCX/ODT) e `prototipo-cartoes` guardam commits que só existem neles: não mesclar nem apagar sem o dono pedir. Se a cópia local em `D:\` não tiver a pasta `.git`, a regra do commit não vale ali até alguém clonar o repositório (ou rodar `git init`).
 - Sem dependências novas além das já listadas sem perguntar.
 - Antes de mexer no visual do cartão, reler "Conceito do cartão". Se uma mudança adicionar elemento visível por padrão e não for uma das três exceções registradas, está errada.
 - Validar visualmente: Playwright já está disponível (`require('playwright')`); tirar screenshot do quadro com `#demo` e conferir pilha, fade e pauta (a pauta fica serrilhada em gradientes com cantos duros em cartões rotacionados; manter bordas suaves).
