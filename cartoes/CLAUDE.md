@@ -4,6 +4,21 @@ Programa desktop para escritores: editor de texto com organização integrada, i
 
 **Princípio central:** reduzir ao máximo a carga cognitiva para escrever as primeiras palavras. O usuário nunca deve sentir limite nem "obrigação" de escrever muito.
 
+## O que este projeto é: protótipo exploratório
+
+Decidido pelo dono em 2026-11-13. Este código **não é a base do programa real**. O programa será desenvolvido do zero no semestre seguinte, com outra estrutura.
+
+- **Para que serve o protótipo:** descobrir o que o programa deve ser e validar a ideia no uso (ver "Validação" em `docs/PLANO_AJUSTES_ABORDAGEM.md`).
+- **O que vai adiante:** as decisões de produto (conceito do cartão, organizador, interface), os problemas achados nos testes e o diário de uso (`docs/USO.md`). Os testes automatizados servem de referência do comportamento esperado, caso a caso.
+- **O que não vai adiante:** a estrutura do código. Não é descartável enquanto durar a validação: o dono escreve nele de verdade, então "nunca perder texto" continua valendo.
+- **Por que não é a base:** o dono prevê funcionalidades que pedem código grande e bem pensado desde a estrutura, por exemplo identificar texto e padrões, indexar cartões a documentos e sugerir cartões para relembrar com base no que está sendo ou foi escrito no documento atual. São ideias para o programa real, **não** pendências deste protótipo.
+
+Consequências para quem trabalha aqui:
+
+- Não investir no que só importaria num programa definitivo: assinatura do instalador, ícone próprio, distribuição, refatorações de estrutura, desempenho com volumes grandes.
+- Investir no que ajuda a aprender: corrigir o que atrapalha o uso, registrar decisões e motivos, manter o diário.
+- Antes de propor uma funcionalidade nova, perguntar se ela testa uma dúvida de produto. Se não testa, fica para o programa real.
+
 ## Estado atual
 
 App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), pontinho de salvo, menu ≡ (lixeira, instantâneos, atalhos) e exportação TXT/MD/PDF (Fase 6), mesa infinita com deslocamento e zoom (Fase 7a), tamanhos P/M/G, seleção múltipla e modo mapa (Fase 7b), revisão de interface (Fase 8), lixeira, backup `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 73 testes automatizados (`npm test`). Instalador gerado (`npm run dist`), sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
