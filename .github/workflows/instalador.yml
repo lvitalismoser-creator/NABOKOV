@@ -46,9 +46,10 @@ jobs:
       - name: Instalar dependências (npm ci)
         run: npm ci
 
-      # Um npm novo pode não rodar os scripts de instalação (aviso "allowScripts").
-      # O build só precisa do esbuild funcionando; se ele não responder, roda o
-      # script dele à mão com `npm rebuild`.
+      # Um npm novo pode não rodar os scripts de instalação (aviso "allowScripts"
+      # para esbuild e electron-winstaller). Na primeira execução (npm 11.20.0) o
+      # aviso apareceu e o esbuild funcionou mesmo assim; o do electron-winstaller
+      # não é usado pelo NSIS. Se o esbuild não responder, roda o script dele à mão.
       - name: Conferir o esbuild
         shell: bash
         run: |

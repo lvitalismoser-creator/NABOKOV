@@ -140,9 +140,10 @@ npm run dist:dir   # só o app descompactado: dist/win-unpacked/Cartões.exe
 ```
 
 - electron-builder, configuração no campo `build` do `package.json`. O pacote leva só `index.html`, `electron/` e `package.json`; ProseMirror e esbuild são devDependencies porque já vão embutidos no `index.html`.
-- **Quem gera é o dono, no Windows dele.** Instaladores gerados numa sessão em nuvem não chegam até ele pelo chat (121 MB; não baixa). Na máquina dele:
+- **Caminho principal: baixar do GitHub.** O fluxo `.github/workflows/instalador.yml` (na raiz do repositório) monta o instalador num Windows do GitHub a cada envio para um ramo `claude/**` que mexa em `cartoes/**`, ou à mão (Actions → "Instalador do Windows" → "Run workflow"). Para baixar: no GitHub, aba **Actions** → a execução mais recente (verde) → seção **Artifacts** → `Cartoes-Setup` (um `.zip` com o `.exe`; precisa estar logado). Fica disponível por 30 dias. O fluxo não roda testes nem publica nada.
+- **Alternativa: gerar na máquina do dono** (`npm run dist`). Instaladores gerados numa sessão em nuvem não chegam até ele pelo chat (121 MB; não baixa). Na máquina dele:
   - Se o PowerShell bloquear o `npm` ("execução de scripts foi desabilitada"), usar `npm.cmd` ou `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
-  - O npm mais novo não executa scripts de instalação sem aprovação (aviso `install-scripts ... allowScripts`). Se o build falhar por causa do `esbuild`: `npm install-scripts approve esbuild electron-winstaller` e `npm install` de novo (não testado).
+  - O npm mais novo não executa scripts de instalação sem aprovação (aviso `install-scripts ... allowScripts`, para `esbuild` e `electron-winstaller`). **O aviso não impede o build:** na primeira execução do fluxo do GitHub (2026-11-23, Windows, Node 26.13.1, npm 11.20.0) ele apareceu e o `npm run dist` funcionou sem aprovar nada (o esbuild acha o binário sem o script; o do `electron-winstaller` não é usado pelo NSIS). Se mesmo assim o build falhar por causa do `esbuild`: `npm rebuild esbuild`, ou `npm install-scripts approve esbuild electron-winstaller` e `npm install` de novo (nenhum dos dois foi preciso até agora).
   - O clone dele fica dentro do Dropbox, que pode segurar arquivos e causar `EPERM`/`EBUSY`: pausar a sincronização durante o build ou clonar fora do Dropbox.
   - Não rodar `npm audit fix --force`: troca versões das ferramentas de build.
 - Gerar o instalador no Linux exige `wine` e `wine32` (o NSIS roda o desinstalador por ele). Foi assim que os instaladores 1.1.0 em diante foram gerados.
