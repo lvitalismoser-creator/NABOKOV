@@ -35,7 +35,8 @@ Documentos de contexto, em `docs/`:
 - `docs/ROTEIRO_CONFERENCIA.md`: o que conferir nos primeiros minutos com o instalador 1.4.1.
 - `docs/DOSSIE_PROGRAMA_REAL.md`: decisões, problemas e perguntas que vão para o programa real.
 - `docs/HANDOFF_*.md`: registros de sessões passadas (histórico; não são atualizados).
-  - `HANDOFF_2026-11-13.md`: **o mais recente; diz de onde retomar** (estado, instalador, pendências, ramos do git).
+  - `HANDOFF_2026-11-23.md`: **o mais recente; diz de onde retomar** (instalador pelo GitHub, roteiro, dossiê, primeiro passo do dono).
+  - `HANDOFF_2026-11-13.md`: estado depois das Fases 6 a 8, problemas com o instalador, ramos do git.
   - `HANDOFF_2026-11-12.md`: Fases 6 a 8, decisões tomadas sem o dono, o que não foi verificado e perguntas a ele.
 - `docs/REVISAO_E_PLANO_SALVAMENTO.md`: histórico da revisão e do plano de salvamento (Fases 0–4).
 
