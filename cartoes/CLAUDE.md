@@ -21,15 +21,19 @@ Consequências para quem trabalha aqui:
 
 ## Estado atual
 
-App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), pontinho de salvo, menu ≡ (lixeira, instantâneos, atalhos) e exportação TXT/MD/PDF (Fase 6), mesa infinita com deslocamento e zoom (Fase 7a), tamanhos P/M/G, seleção múltipla e modo mapa (Fase 7b), revisão de interface (Fase 8), lixeira, backup `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 73 testes automatizados (`npm test`). Versão 1.4.1. O instalador é gerado pelo dono na máquina dele (`npm run dist`); sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
+App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), pontinho de salvo, menu ≡ (lixeira, instantâneos, atalhos) e exportação TXT/MD/PDF (Fase 6), mesa infinita com deslocamento e zoom (Fase 7a), tamanhos P/M/G, seleção múltipla e modo mapa (Fase 7b), revisão de interface (Fase 8), lixeira, backup `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 73 testes automatizados (`npm test`). Versão 1.4.1. O instalador sai pelo GitHub Actions (ver "Empacotar") ou pelo `npm run dist` na máquina do dono; sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
 
 O estado de cada fase (feita / aguardando conferência do dono) fica em `docs/PLANO_FASES_5_A_8.md`.
+
+**Para o dono conferir o 1.4.1:** `docs/ROTEIRO_CONFERENCIA.md` (15 itens). **Para o programa real:** `docs/DOSSIE_PROGRAMA_REAL.md` junta as decisões de produto com os motivos, os problemas achados, o que os testes documentam e as perguntas em aberto ao dono.
 
 Documentos de contexto, em `docs/`:
 
 - `docs/PLANO_AJUSTES_ABORDAGEM.md`: ajustes de 2026-11-11 (ordem das fases, como fechar uma fase, validação). **Vale sobre os outros planos.**
 - `docs/PLANO_FASES_5_A_8.md`: plano das fases e decisões de produto.
 - `docs/USO.md`: diário de uso (o dono anota quando quiser; o Claude pergunta no início de cada sessão e completa).
+- `docs/ROTEIRO_CONFERENCIA.md`: o que conferir nos primeiros minutos com o instalador 1.4.1.
+- `docs/DOSSIE_PROGRAMA_REAL.md`: decisões, problemas e perguntas que vão para o programa real.
 - `docs/HANDOFF_*.md`: registros de sessões passadas (histórico; não são atualizados).
   - `HANDOFF_2026-11-13.md`: **o mais recente; diz de onde retomar** (estado, instalador, pendências, ramos do git).
   - `HANDOFF_2026-11-12.md`: Fases 6 a 8, decisões tomadas sem o dono, o que não foi verificado e perguntas a ele.
