@@ -1,0 +1,70 @@
+# Gera o instalador do Windows (Cartoes-Setup-<versão>.exe) num Windows do GitHub
+# e o deixa para download em Actions → execução → Artifacts (30 dias).
+# Só monta o instalador: não publica, não assina, não roda testes.
+name: Instalador do Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'claude/**'
+    paths:
+      - 'cartoes/**'
+      - '.github/workflows/instalador.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: instalador-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  instalador:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: cartoes
+    env:
+      # O instalador não usa o navegador do Playwright (só os testes usam).
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: cartoes/package-lock.json
+
+      - name: Versões
+        run: |
+          node -v
+          npm -v
+
+      - name: Instalar dependências (npm ci)
+        run: npm ci
+
+      # Um npm novo pode não rodar os scripts de instalação (aviso "allowScripts").
+      # O build só precisa do esbuild funcionando; se ele não responder, roda o
+      # script dele à mão com `npm rebuild`.
+      - name: Conferir o esbuild
+        shell: bash
+        run: |
+          if ! node -e "require('esbuild').transformSync('let a=1')" ; then
+            echo "esbuild sem o binário; rodando npm rebuild esbuild"
+            npm rebuild esbuild
+            node -e "require('esbuild').transformSync('let a=1')"
+          fi
+
+      - name: Gerar o instalador (npm run dist)
+        run: npm run dist
+
+      - name: Enviar o instalador
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cartoes-Setup
+          path: cartoes/dist/Cartoes-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 30
