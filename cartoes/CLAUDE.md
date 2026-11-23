@@ -21,17 +21,22 @@ Consequências para quem trabalha aqui:
 
 ## Estado atual
 
-App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), pontinho de salvo, menu ≡ (lixeira, instantâneos, atalhos) e exportação TXT/MD/PDF (Fase 6), mesa infinita com deslocamento e zoom (Fase 7a), tamanhos P/M/G, seleção múltipla e modo mapa (Fase 7b), revisão de interface (Fase 8), lixeira, backup `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 73 testes automatizados (`npm test`). Versão 1.4.1. O instalador é gerado pelo dono na máquina dele (`npm run dist`); sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
+App desktop (Electron, Windows x64) com cartões, grupos por ímã, gaveta, categorias, organizador de ordens (Fase 5), pontinho de salvo, menu ≡ (lixeira, instantâneos, atalhos) e exportação TXT/MD/PDF (Fase 6), mesa infinita com deslocamento e zoom (Fase 7a), tamanhos P/M/G, seleção múltipla e modo mapa (Fase 7b), revisão de interface (Fase 8), lixeira, backup `.json` e salvamento robusto (disco atômico + IndexedDB + localStorage, instantâneos, aba única). 73 testes automatizados (`npm test`). Versão 1.4.1. O instalador sai pelo GitHub Actions (ver "Empacotar") ou pelo `npm run dist` na máquina do dono; sem ícone próprio nem assinatura. Ainda roda também como `index.html` no navegador.
 
 O estado de cada fase (feita / aguardando conferência do dono) fica em `docs/PLANO_FASES_5_A_8.md`.
+
+**Para o dono conferir o 1.4.1:** `docs/ROTEIRO_CONFERENCIA.md` (15 itens). **Para o programa real:** `docs/DOSSIE_PROGRAMA_REAL.md` junta as decisões de produto com os motivos, os problemas achados, o que os testes documentam e as perguntas em aberto ao dono.
 
 Documentos de contexto, em `docs/`:
 
 - `docs/PLANO_AJUSTES_ABORDAGEM.md`: ajustes de 2026-11-11 (ordem das fases, como fechar uma fase, validação). **Vale sobre os outros planos.**
 - `docs/PLANO_FASES_5_A_8.md`: plano das fases e decisões de produto.
 - `docs/USO.md`: diário de uso (o dono anota quando quiser; o Claude pergunta no início de cada sessão e completa).
+- `docs/ROTEIRO_CONFERENCIA.md`: o que conferir nos primeiros minutos com o instalador 1.4.1.
+- `docs/DOSSIE_PROGRAMA_REAL.md`: decisões, problemas e perguntas que vão para o programa real.
 - `docs/HANDOFF_*.md`: registros de sessões passadas (histórico; não são atualizados).
-  - `HANDOFF_2026-11-13.md`: **o mais recente; diz de onde retomar** (estado, instalador, pendências, ramos do git).
+  - `HANDOFF_2026-11-23.md`: **o mais recente; diz de onde retomar** (instalador pelo GitHub, roteiro, dossiê, primeiro passo do dono).
+  - `HANDOFF_2026-11-13.md`: estado depois das Fases 6 a 8, problemas com o instalador, ramos do git.
   - `HANDOFF_2026-11-12.md`: Fases 6 a 8, decisões tomadas sem o dono, o que não foi verificado e perguntas a ele.
 - `docs/REVISAO_E_PLANO_SALVAMENTO.md`: histórico da revisão e do plano de salvamento (Fases 0–4).
 
@@ -140,9 +145,10 @@ npm run dist:dir   # só o app descompactado: dist/win-unpacked/Cartões.exe
 ```
 
 - electron-builder, configuração no campo `build` do `package.json`. O pacote leva só `index.html`, `electron/` e `package.json`; ProseMirror e esbuild são devDependencies porque já vão embutidos no `index.html`.
-- **Quem gera é o dono, no Windows dele.** Instaladores gerados numa sessão em nuvem não chegam até ele pelo chat (121 MB; não baixa). Na máquina dele:
+- **Caminho principal: baixar do GitHub.** O fluxo `.github/workflows/instalador.yml` (na raiz do repositório) monta o instalador num Windows do GitHub a cada envio para um ramo `claude/**` que mexa em `cartoes/**`, ou à mão (Actions → "Instalador do Windows" → "Run workflow"). Para baixar: no GitHub, aba **Actions** → a execução mais recente (verde) → seção **Artifacts** → `Cartoes-Setup` (um `.zip` com o `.exe`; precisa estar logado). Fica disponível por 30 dias. O fluxo não roda testes nem publica nada.
+- **Alternativa: gerar na máquina do dono** (`npm run dist`). Instaladores gerados numa sessão em nuvem não chegam até ele pelo chat (121 MB; não baixa). Na máquina dele:
   - Se o PowerShell bloquear o `npm` ("execução de scripts foi desabilitada"), usar `npm.cmd` ou `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
-  - O npm mais novo não executa scripts de instalação sem aprovação (aviso `install-scripts ... allowScripts`). Se o build falhar por causa do `esbuild`: `npm install-scripts approve esbuild electron-winstaller` e `npm install` de novo (não testado).
+  - O npm mais novo não executa scripts de instalação sem aprovação (aviso `install-scripts ... allowScripts`, para `esbuild` e `electron-winstaller`). **O aviso não impede o build:** na primeira execução do fluxo do GitHub (2026-11-23, Windows, Node 26.13.1, npm 11.20.0) ele apareceu e o `npm run dist` funcionou sem aprovar nada (o esbuild acha o binário sem o script; o do `electron-winstaller` não é usado pelo NSIS). Se mesmo assim o build falhar por causa do `esbuild`: `npm rebuild esbuild`, ou `npm install-scripts approve esbuild electron-winstaller` e `npm install` de novo (nenhum dos dois foi preciso até agora).
   - O clone dele fica dentro do Dropbox, que pode segurar arquivos e causar `EPERM`/`EBUSY`: pausar a sincronização durante o build ou clonar fora do Dropbox.
   - Não rodar `npm audit fix --force`: troca versões das ferramentas de build.
 - Gerar o instalador no Linux exige `wine` e `wine32` (o NSIS roda o desinstalador por ele). Foi assim que os instaladores 1.1.0 em diante foram gerados.
