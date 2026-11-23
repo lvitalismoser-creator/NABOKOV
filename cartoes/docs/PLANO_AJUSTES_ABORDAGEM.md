@@ -139,6 +139,8 @@ Como no plano original, incluindo a decisão sobre a linha de atalhos `.org-keys
 ## Pendências ainda abertas
 
 - **Conferência do dono** das Fases 6, 7a, 7b e 8. O instalador **1.4.1** contém tudo (inclusive a correção feita depois do 1.4.0): conferir só ele basta para as quatro fases.
+  - Roteiro da conferência (15 itens, o que fazer e o que esperar): `ROTEIRO_CONFERENCIA.md`. O instalador pode ser baixado do GitHub (Actions → Artifacts; ver "Empacotar" no `CLAUDE.md`).
+  - Como anotar o uso, inclusive os momentos de reencontrar ou ser lembrado de um cartão: seção "Como anotar" do `USO.md`.
 - **Validação:** começa quando o dono instalar o 1.4.1.
 - DOCX/ODT à mão ou com biblioteca: só depois da validação.
 - ~~`.org-keys` fica ou sai: Fase 8.~~ Saiu (2026-11-12), a confirmar com o dono.
